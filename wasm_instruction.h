@@ -127,6 +127,23 @@ enum wasm_instruction: wasm_uint8_t {
 	I64_LE_U		= 0x58,
 	I64_GE_S		= 0x59,
 	I64_GE_U		= 0x5a,
+	
+	// FLOATING POINT COMPARISON INSTRUCTIONS
+	// float32
+	F32_EQ  		= 0x5b,
+	F32_NE  		= 0x5c,
+	F32_LT			= 0x5d,
+	F32_GT			= 0x5e,
+	F32_LE			= 0x5f,
+	F32_GE			= 0x60,
+	// float64
+	F64_EQ  		= 0x61,
+	F64_NE  		= 0x62,
+	F64_LT			= 0x63,
+	F64_GT			= 0x64,
+	F64_LE			= 0x55,
+	F64_GE			= 0x66,
+
 
 	// CONVERSION INSTRUCTIONS
 	// to int32

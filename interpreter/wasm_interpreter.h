@@ -151,6 +151,14 @@ struct wasm_runtime
 	template <class T, class U>
 	void convert_op(T wasm_value_t::* m_from, U wasm_value_t::* m_to)
 	{ sp().*m_to = top().*m_from; }
+	
+	template <class T, class U>
+	void reinterpret_op(T wasm_value_t::* m_from, U wasm_value_t::* m_to)
+	{
+		static_assert(sizeof(T) == sizeof(U));
+		auto tmp = top().*m_from;
+		std::memcpy(&(sp().*m_to), &tmp, sizeof(T));
+	}
 };
 
 
@@ -158,99 +166,162 @@ struct wasm_runtime
 
 bool wasm_runtime::eval()
 {
-	switch(*(fp->pc))
+	switch(pc()++)
 	{
-	case NOP: break;
-	case DROP: pop(); break;
-	case GET_LOCAL: break;
-	
-	case I32_CONST: [[fallthrough]]
-	case I64_CONST:	[[fallthrough]]
-	case F32_CONST:	[[fallthrough]]
-	case F64_CONST: push(); break;		
 
 	// I32 ARITHMETIC
-	case I32_ADD: 		add_op(u_32); 		break; 
-	case I32_SUB:		sub_op(u_32); 		break;
-	case I32_MUL:		mul_op(u_32); 		break;
-	case I32_DIV_S:		div_op(i_32); 		break;
-	case I32_DIV_U:		div_op(u_32); 		break;
-	case I32_REM_S:		rem_op(i_32); 		break;
-	case I32_REM_U:		rem_op(u_32); 		break;
-	case I32_AND:		and_op(u_32); 		break;
-	case I32_OR:		or_op(u_32);  		break;
-	case I32_XOR:		xor_op(u_32); 		break; 
-	case I32_SHL:		shl_op(u_32); 		break;
-	case I32_SHR_S:		shr_op(i_32); 		break;
-	case I32_SHR_U:		shr_op(u_32); 		break;
-	case I32_ROTL:		rotl_op(u_32); 		break;
-	case I32_ROTR:		rotr_op(u_32); 		break;
-	case I32_CLZ:		clz_op(u_32); 		break;
-	case I32_CTZ:		ctz_op(u_32); 		break;
-	case I32_POPCNT:	popcnt_op(u_32); 	break;
-	case I32_EQZ:		eqz_op(u_32); 		break;
+	case I32_ADD: 			add_op(u_32); 			break;
+	case I32_SUB:			sub_op(u_32); 			break;
+	case I32_MUL:			mul_op(u_32); 			break;
+	case I32_DIV_S:			div_op(i_32); 			break;
+	case I32_DIV_U:			div_op(u_32); 			break;
+	case I32_REM_S:			rem_op(i_32); 			break;
+	case I32_REM_U:			rem_op(u_32); 			break;
+	case I32_AND:			and_op(u_32); 			break;
+	case I32_OR:			or_op(u_32);  			break;
+	case I32_XOR:			xor_op(u_32); 			break;
+	case I32_SHL:			shl_op(u_32); 			break;
+	case I32_SHR_S:			shr_op(i_32); 			break;
+	case I32_SHR_U:			shr_op(u_32); 			break;
+	case I32_ROTL:			rotl_op(u_32); 			break;
+	case I32_ROTR:			rotr_op(u_32); 			break;
+	case I32_CLZ:			clz_op(u_32); 			break;
+	case I32_CTZ:			ctz_op(u_32); 			break;
+	case I32_POPCNT:		popcnt_op(u_32); 		break;
+	case I32_EQZ:			eqz_op(u_32); 			break;
+
+	// I32 COMPARISONS
+	case I32_EQ:			eq_op(i_32);			break;
+	case I32_NE: 			ne_op(i_32);			break;
+	case I32_LT_S:			lt_op(i_32);			break;
+	case I32_LT_U:			lt_op(u_32);			break;
+	case I32_GT_S:			gt_op(i_32);			break;
+	case I32_GT_U:			gt_op(u_32);			break;
+	case I32_LE_S:			le_op(i_32);			break;
+	case I32_LE_U:			le_op(u_32);			break;
+	case I32_GE_S:			ge_op(i_32);			break;
+	case I32_GE_U:			ge_op(u_32);			break;
 	
+	// I32 COMPARISONS
+	case I32_WRAP			convert_op(u_64, u_32);		break;
+	case I32_TRUNC_F32_S		convert_op(f_32, i_32);		break;
+	case I32_TRUNC_F32_U		convert_op(f_32, u_32);		break;
+	case I32_TRUNC_F64_S		convert_op(f_64, i_32);		break;
+	case I32_TRUNC_F64_U		convert_op(f_64, u_32);		break;
+	case I32_REINTERPRET_F32	reinterpret_op(f_32, u_32);	break;
+
 	// I64 ARITHMETIC
-	case I64_ADD: 		add_op(u_64); 		break; 
-	case I64_SUB:		sub_op(u_64); 		break;
-	case I64_MUL:		mul_op(u_64); 		break;
-	case I64_DIV_S:		div_op(i_64); 		break;
-	case I64_DIV_U:		div_op(u_64); 		break;
-	case I64_REM_S:		rem_op(i_64); 		break;
-	case I64_REM_U:		rem_op(u_64); 		break;
-	case I64_AND:		and_op(u_64); 		break;
-	case I64_OR:		or_op(u_64);  		break;
-	case I64_XOR:		xor_op(u_64); 		break; 
-	case I64_SHL:		shl_op(u_64); 		break;
-	case I64_SHR_S:		shr_op(i_64); 		break;
-	case I64_SHR_U:		shr_op(u_64); 		break;
-	case I64_ROTL:		rotl_op(u_64); 		break;
-	case I64_ROTR:		rotr_op(u_64); 		break;
-	case I64_CLZ:		clz_op(u_64); 		break;
-	case I64_CTZ:		ctz_op(u_64); 		break;
-	case I64_POPCNT:	popcnt_op(u_64); 	break;
-	case I64_EQZ:		eqz_op(u_64); 		break;
+	case I64_ADD: 			add_op(u_64); 			break;
+	case I64_SUB:			sub_op(u_64); 			break;
+	case I64_MUL:			mul_op(u_64); 			break;
+	case I64_DIV_S:			div_op(i_64); 			break;
+	case I64_DIV_U:			div_op(u_64); 			break;
+	case I64_REM_S:			rem_op(i_64); 			break;
+	case I64_REM_U:			rem_op(u_64); 			break;
+	case I64_AND:			and_op(u_64); 			break;
+	case I64_OR:			or_op(u_64);  			break;
+	case I64_XOR:			xor_op(u_64); 			break;
+	case I64_SHL:			shl_op(u_64); 			break;
+	case I64_SHR_S:			shr_op(i_64); 			break;
+	case I64_SHR_U:			shr_op(u_64); 			break;
+	case I64_ROTL:			rotl_op(u_64); 			break;
+	case I64_ROTR:			rotr_op(u_64); 			break;
+	case I64_CLZ:			clz_op(u_64); 			break;
+	case I64_CTZ:			ctz_op(u_64); 			break;
+	case I64_POPCNT:		popcnt_op(u_64); 		break;
+	case I64_EQZ:			eqz_op(u_64); 			break;
+	
+	// I64 COMPARISONS
+	case I64_EQ:			eq_op(i_64);			break;
+	case I64_NE: 			ne_op(i_64);			break;
+	case I64_LT_S:			lt_op(i_64);			break;
+	case I64_LT_U:			lt_op(u_64);			break;
+	case I64_GT_S:			gt_op(i_64);			break;
+	case I64_GT_U:			gt_op(u_64);			break;
+	case I64_LE_S:			le_op(i_64);			break;
+	case I64_LE_U:			le_op(u_64);			break;
+	case I64_GE_S:			ge_op(i_64);			break;
+	case I64_GE_U:			ge_op(u_64);			break;
+	
+	// I64 COMPARISONS
+	case I64_EXTEND_S		convert_op(i_32, i_64);		break;
+	case I64_EXTEND_U		convert_op(u_32, u_64);		break;
+	case I64_TRUNC_F32_S		convert_op(f_32, i_64);		break;
+	case I64_TRUNC_F32_U		convert_op(f_32, u_64);		break;
+	case I64_TRUNC_F64_S		convert_op(f_64, i_64);		break;
+	case I64_TRUNC_F64_U		convert_op(f_64, u_64);		break;
+	case I64_REINTERPRET_F64	reinterpret_op(f_32, u_32);	break;
 
 	// F32 ARITHMETIC 
-	case F32_ADD:		add_op(f_32); break;
-	case F32_SUB:		sub_op(f_32); break;
-	case F32_MUL:		mul_op(f_32); break;
-	case F32_DIV:		div_op(f_32); break;
-	case F32_SQRT:		sqrt_op(f_32); break;
-	case F32_MIN:		min_op(f_32); break;
-	case F32_MAX:		max_op(f_32); break;
-	case F32_CEIL:		ceil_op(f_32); break;
-	case F32_FLOOR:		floor_op(f_32); break;
-	case F32_TRUNC:		trunc_op(f_32); break;
-	case F32_NEAREST:	nearest_op(f_32); break;
-	case F32_ABS:		abs_op(f_32); break;
-	case F32_NEG:		neg_op(f_32); break;
-	case F32_COPYSIGN:	copysign_op(f_32); break;
+	case F32_ADD:			add_op(f_32);   		break;
+	case F32_SUB:			sub_op(f_32);   		break;
+	case F32_MUL:			mul_op(f_32);   		break;
+	case F32_DIV:			div_op(f_32);   		break;
+	case F32_SQRT:			sqrt_op(f_32);  		break;
+	case F32_MIN:			min_op(f_32);   		break;
+	case F32_MAX:			max_op(f_32);   		break;
+	case F32_CEIL:			ceil_op(f_32);  		break;
+	case F32_FLOOR:			floor_op(f_32); 		break;
+	case F32_TRUNC:			trunc_op(f_32); 		break;
+	case F32_NEAREST:		nearest_op(f_32); 		break;
+	case F32_ABS:			abs_op(f_32); 			break;
+	case F32_NEG:			neg_op(f_32); 			break;
+	case F32_COPYSIGN:		copysign_op(f_32); 		break;
+	
+	// F32 COMPARISONS
+	case F32_EQ:			eq_op(f_32);			break;
+	case F32_NE: 			ne_op(f_32);			break;
+	case F32_LT:			lt_op(f_32);			break;
+	case F32_GT:			gt_op(f_32);			break;
+	case F32_LE:			le_op(f_32);			break;
+	case F32_GE:			ge_op(f_32);			break;
+	
+	// F32 CONVERSIONS
+	case F32_DEMOTE         	convert_op(f_64, f_32);		break;
+	case F32_CONVERT_I32_S       	convert_op(i_32, f_32);		break;
+	case F32_CONVERT_I32_U       	convert_op(u_32, f_32);		break;
+	case F32_CONVERT_I64_S       	convert_op(i_64, f_32);		break;
+	case F32_CONVERT_I64_U       	convert_op(u_64, f_32);		break;
+	case F32_REINTERPRET_I32     	reinterpret_op(u_32, f_32);	break;
 	
 	// F64 ARITHMETIC 
-	case F64_ADD:		add_op(f_64); break;
-	case F64_SUB:		sub_op(f_64); break;
-	case F64_MUL:		mul_op(f_64); break;
-	case F64_DIV:		div_op(f_64); break;
-	case F64_SQRT:		sqrt_op(f_64); break;
-	case F64_MIN:		min_op(f_64); break;
-	case F64_MAX:		max_op(f_64); break;
-	case F64_CEIL:		ceil_op(f_64); break;
-	case F64_FLOOR:		floor_op(f_64); break;
-	case F64_TRUNC:		trunc_op(f_64); break;
-	case F64_NEAREST:	nearest_op(f_64); break;
-	case F64_ABS:		abs_op(f_64); break;
-	case F64_NEG:		neg_op(f_64); break;
-	case F64_COPYSIGN:	copysign_op(f_64); break;
+	case F64_ADD:			add_op(f_64); 			break;
+	case F64_SUB:			sub_op(f_64); 			break;
+	case F64_MUL:			mul_op(f_64); 			break;
+	case F64_DIV:			div_op(f_64); 			break;
+	case F64_SQRT:			sqrt_op(f_64); 			break;
+	case F64_MIN:			min_op(f_64); 			break;
+	case F64_MAX:			max_op(f_64); 			break;
+	case F64_CEIL:			ceil_op(f_64); 			break;
+	case F64_FLOOR:			floor_op(f_64); 		break;
+	case F64_TRUNC:			trunc_op(f_64); 		break;
+	case F64_NEAREST:		nearest_op(f_64); 		break;
+	case F64_ABS:			abs_op(f_64); 			break;
+	case F64_NEG:			neg_op(f_64); 			break;
+	case F64_COPYSIGN:		copysign_op(f_64); 		break;
 	
+	// F64 COMPARISONS
+	case F64_EQ:			eq_op(f_64);			break;
+	case F64_NE: 			ne_op(f_64);			break;
+	case F64_LT:			lt_op(f_64);			break;
+	case F64_GT:			gt_op(f_64);			break;
+	case F64_LE:			le_op(f_64);			break;
+	case F64_GE:			ge_op(f_64);			break;
 	
+	// F64 CONVERSIONS
+	case F64_PROMOTE         	convert_op(f_32, f_64);		break;
+	case F64_CONVERT_I32_S       	convert_op(i_32, f_64);		break;
+	case F64_CONVERT_I32_U       	convert_op(u_32, f_64);		break;
+	case F64_CONVERT_I64_S       	convert_op(i_64, f_64);		break;
+	case F64_CONVERT_I64_U       	convert_op(u_64, f_64);		break;
+	case F64_REINTERPRET_I64     	reinterpret_op(u_64, f_64);	break;
 	
 
 
 	default:
 		trap();
 	}
-	++(fp->pc);
+
 	return true;
 }
 
