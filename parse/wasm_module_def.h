@@ -1,5 +1,5 @@
-#ifndef PARSE_WASM_MODULE_H
-#define PARSE_WASM_MODULE_H
+#ifndef PARSE_WASM_MODULE_DEF_H
+#define PARSE_WASM_MODULE_DEF_H
 #include "wasm_base.h"
 #include "parse/leb128/leb128.h"
 #include <string>
@@ -7,7 +7,7 @@
 #include <algorithm>
 
 
-struct wasm_module_section
+struct wasm_module_section_def
 {
 	const wasm_uint8_t id;
 	const std::string name;
@@ -39,12 +39,12 @@ struct wasm_module_def
 	};
 	const magic_cookie_t magic_cookie;
 	const wasm_uint32_t = 0x01;
-	std::vector<wasm_module_section> sections;
+	std::vector<wasm_module_section_def> sections;
 };
 
 template <class CharIt>
 [[nodiscard]]
-std::pair<wasm_module_section, CharIt>
+std::pair<wasm_module_section_def, CharIt>
 parse_module_section(CharIt begin, CharIt end)
 {
 	assert(begin < end);
@@ -73,10 +73,10 @@ parse_module_section(CharIt begin, CharIt end)
 	}
 	data.resize(payload_len);
 	std::copy_n(begin, payload_len, data.begin());
-	return wasm_module_section{id, std::move(name), std::move(data)};
+	return wasm_module_section_def{id, std::move(name), std::move(data)};
 }
 
 
 
 
-#endif /* PARSE_WASM_MODULE_H */ 
+#endif /* PARSE_WASM_MODULE_DEF_H */ 

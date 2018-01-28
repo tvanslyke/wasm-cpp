@@ -75,7 +75,7 @@ leb128_decode_sint(CharIt begin, CharIt end)
 		result = -1 * IntType(value);
 	}
 	else
-		result = *reinterpret_cast<IntType*>(&value);
+		result = bit_cast<IntType>(value);
 	return {result, begin, count};
 }
 

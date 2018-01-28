@@ -3,6 +3,8 @@
 
 #include <cstddef>
 #include <limits>
+#include <type_traits>
+#include "utilities/bit_cast.h"
 
 template <class T>
 constexpr std::size_t int_width() 
@@ -150,19 +152,32 @@ template <class T>
 std::size_t population_count(T value)
 {
 #ifndef __GNUC__
-	std::size_t count = 0;
-	UnsignedT uvalue = *reinterpret_cast<UnsignedT*>(&value);
-	while(uvalue)
+	if constexpr(std::is_signed_v<T>)
 	{
-		count += uvalue & 0x01;
-		uvalue >>= 1;
+		using UnsignedT = std::make_unsigned_t<T>;
+		std::size_t count = 0;
+		UnsignedT uvalue = bit_cast<UnsignedT>(value);
+		while(uvalue)
+		{
+			count += uvalue & 0x01;
+			uvalue >>= 1;
+		}
+		return count;
 	}
-	return count;
+	else
+	{
+		std::size_t count = 0;
+		while(value)
+		{
+			count += value & 0x01;
+			value >>= 1;
+		}
+		return count;
+	}
 #else
 	return GNU_Intrin<T>::popcount(value);
 #endif
 }
-
 
 
 #endif /* BITUTILS_H */

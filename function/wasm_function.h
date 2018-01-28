@@ -5,26 +5,28 @@
 #include "wasm_instruction.h"
 #include "wasm_value.h"
 #include <vector>
+#include <memory>
 
+
+struct wasm_function_signature
+{
+	using char_type = std::underlying_type_t<wasm_language_type>;
+	// std::basic_string to leverage SSO
+	const std::size_t param_count;
+	const std::basic_string<char_type> types;
+};
+
+std::shared_ptr<wasm_function_signature> 
+make_wasm_function_signature
+
+template <class It
 
 struct wasm_function
 {
-
-	wasm_function(std::size_t local_count, std::size_t instruction_count, wasm_instruction_t* instrs);
-	const wasm_instruction* get_code() const;
-	std::size_t locals_count() const;
-	std::size_t instruction_count() const;
-private:
-	struct wasm_function_impl;
-	struct wasm_function_deleter;
-	using wasm_function_impl_ptr = std::unique_ptr<wasm_function_impl, wasm_function_deleter>;
-
-	wasm_function_impl_ptr impl;
+	using char_type = std::underlying_type_t<wasm_value_t>;
+	std::shared_ptr<wasm_function_signature> signature;
+	std::basic_string<
 };
-
-
-
-
 
 
 

@@ -20,6 +20,18 @@ using wasm_byte_t = std::uint_least8_t;
 using wasm_size_t = std::size_t;
 
 
+enum class wasm_language_type: 
+	std::int_least8_t
+{
+	i32 = -0x01,
+	i64 = -0x02,
+	f32 = -0x03,
+	f64 = -0x04,
+	anyfunc = -0x10,
+	func = -0x20,
+	block = -0x40
+};
+
 
 
 #endif /* WASM_BASE_H */

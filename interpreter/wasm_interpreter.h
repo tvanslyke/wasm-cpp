@@ -3,6 +3,7 @@
 
 #include "wasm_value.h"
 #include "wasm_instructions.h"
+#include "utilities/bit_cast.h"
 
 struct wasm_frame
 {
@@ -154,11 +155,7 @@ struct wasm_runtime
 	
 	template <class T, class U>
 	void reinterpret_op(T wasm_value_t::* m_from, U wasm_value_t::* m_to)
-	{
-		static_assert(sizeof(T) == sizeof(U));
-		auto tmp = top().*m_from;
-		std::memcpy(&(sp().*m_to), &tmp, sizeof(T));
-	}
+	{ sp().*m_to = bit_cast<U>(top().*m_from); }
 };
 
 

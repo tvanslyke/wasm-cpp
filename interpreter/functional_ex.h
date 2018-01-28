@@ -5,6 +5,7 @@
 #include <functional>
 #include <type_traits>
 #include "bitutils.h"
+#include "utilities/bit_cast.h"
 
 template <class T = void>
 struct bit_lshift
@@ -36,7 +37,7 @@ struct bit_rshift
 		else
 		{
 			UnsignedT = std::make_unsigned_t<T>;
-			UsignedT lhs_u = *reinterpret_cast<UnsignedT*>(&lhs);
+			UsignedT lhs_u = bit_cast<UnsignedT>(lhs);
 			bool msb = (UnsignedT(1) << (bits - 1)) & lhs_u;
 			lhs_u >>= shift;
 			if(msb)
@@ -46,7 +47,7 @@ struct bit_rshift
 				mask <<= (bits - shift);
 				lhs_u |= mask;
 			}
-			return *reinterpret_cast<T*>(lhs_u);
+			return bit_cast<T>(lhs_u);
 		}
 	}
 };
