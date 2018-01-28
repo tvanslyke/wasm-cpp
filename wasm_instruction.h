@@ -1,7 +1,7 @@
 #ifndef WASM_INSTRUCTION_H
 #define WASM_INSTRUCTION_H
 
-enum wasm_instruction {
+enum wasm_instruction: wasm_uint8_t {
 	
 	// BLOCK INSTRUCTIONS
 	BLOCK			= 0x02, 
