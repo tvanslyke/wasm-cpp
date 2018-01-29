@@ -25,7 +25,14 @@ struct wasm_linear_memory
 		std::size_t old_size = size();
 		if(old_size > (maximum_memory_size - page_count))
 			return -1;
-		memory.resize(old_size + page_count, 0);
+		try
+		{
+			memory.resize(old_size + page_count, 0);
+		} 
+		catch(const std::bad_alloc&)
+		{
+			return -1;
+		}
 		return old_size;
 	}
 	
@@ -41,7 +48,7 @@ struct wasm_linear_memory
 	}
 
 	template <class T>
-	bool store(std::size_t addr, std::size_t offs, wasm_value_t& src, T wasm_value_t::* member) const
+	bool store(std::size_t addr, std::size_t offs, const wasm_value_t& src, const T wasm_value_t::* member) 
 	{
 		auto* dest = access(addr, offs, sizeof(T));
 		if(not dest)
@@ -50,15 +57,6 @@ struct wasm_linear_memory
 		return true;
 	}
 
-	template <class AsType, class T>
-	bool load(std::size_t addr, std::size_t offs, wasm_value_t& dest, T wasm_value_t::* member) const
-	{
-		const auto* src = access(addr, offs, sizeof(T));
-		if(not src)
-			return false;
-		std::memcpy(&dest, &src, sizeof(T));
-		return true;
-	}
 
 	template <std::size_t B, class T>
 	bool narrow_load(std::size_t addr, std::size_t offs, wasm_value_t& dest, T wasm_value_t::* member) const
@@ -86,7 +84,7 @@ struct wasm_linear_memory
 	}
 
 	template <std::size_t B, class T>
-	bool wrap_store(std::size_t addr, std::size_t offs, wasm_value_t& src, T wasm_value_t::* member) const
+	bool wrap_store(std::size_t addr, std::size_t offs, const wasm_value_t& src, const T wasm_value_t::* member) 
 	{
 		static_assert(std::is_unsigned_v<T>);
 		static_assert(B <= sizeof(T));

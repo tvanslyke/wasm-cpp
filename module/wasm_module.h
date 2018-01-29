@@ -8,10 +8,11 @@
 struct wasm_module
 {
 	
-
-private:
-	std::vector<wasm_function_signature> types;
-	std::vector<wasm_function> functions;
+	const std::vector<wasm_function_signature_handle> types;
+	const std::vector<wasm_function> functions;
+	std::vector<wasm_linear_memory> memories;
+	std::vector<wasm_value_t> globals;
+	const std::vector<bool> global_mutabilities;
 };
 
 #endif /* MODULE_WASM_MODULE_H */

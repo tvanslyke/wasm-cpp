@@ -14,16 +14,21 @@ struct wasm_function_signature
 {
 	using char_type = std::underlying_type_t<wasm_language_type>;
 	template <class String>
-	wasm_function_signature(std::size_t param_count_, String&& str):
-		param_count(param_count_), types(std::forward<String>(str)),
+	wasm_function_signature(std::size_t parameter_count, std::size_t local_variables_count, String&& str):
+		param_count(parameter_count), 
+		locals_count(local_variables_count), 
+		types(std::forward<String>(str)),
 		hash_value(compute_hash())
 	{
 		
 	}
+
 	// std::basic_string to leverage SSO
 	const std::size_t param_count;
+	const std::size_t locals_count;
 	const std::basic_string<char_type> types;
 	const std::size_t hash_value;
+
 private:
 	std::size_t return_type_count() const
 	{
