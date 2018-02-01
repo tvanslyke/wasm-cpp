@@ -18,6 +18,7 @@ using wasm_float32_t = float;
 using wasm_float64_t = double;
 using wasm_byte_t = std::uint_least8_t;
 using wasm_size_t = std::size_t;
+using wasm_ptr_t = wasm_uint32_t;
 
 
 enum class wasm_language_type: 

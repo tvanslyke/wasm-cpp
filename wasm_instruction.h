@@ -49,10 +49,11 @@ enum wasm_instruction: wasm_uint8_t {
 	I32_ROTL		= 0x77,
 	I32_ROTR		= 0x78,
 	I32_CLZ			= 0x67,
-	I32_CTZ			= 0x78,
+	I32_CTZ			= 0x68,
 	I32_POPCNT		= 0x69,
 	I32_EQZ			= 0x45,
 	// int64
+	I32_ADD			= 0x7c,
 	I64_SUB			= 0x7d,
 	I64_MUL			= 0x7e,
 	I64_DIV_S		= 0x7f,
@@ -141,7 +142,7 @@ enum wasm_instruction: wasm_uint8_t {
 	F64_NE  		= 0x62,
 	F64_LT			= 0x63,
 	F64_GT			= 0x64,
-	F64_LE			= 0x55,
+	F64_LE			= 0x65,
 	F64_GE			= 0x66,
 
 
@@ -211,4 +212,35 @@ enum wasm_instruction: wasm_uint8_t {
 	CURRENT_MEMORY 		= 0x3f,
 };
 
+
+static constexpr const 
+std::array<std::underlying_type_t<wasm_instruction>> 
+non_instructions {
+	// total of 86; may change in future
+	  6,   7,   8,   9,  10,  
+	 18,  19,  20,  21,  22,  23,  24,  25,  
+	 28,  29,  30,  31,  
+  	 37,  38,  39, 
+	192, 193, 194, 195, 196, 197, 198, 
+	199, 200, 201, 202, 203, 204, 205, 206, 207, 208, 
+	209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 
+	219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 
+	229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 
+	239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 
+	249, 250, 251, 252, 253, 254, 255
+	// don't worry, I didn't do this by hand :)
+};
+
+static bool wasm_instruction_dne(
+		std::underlying_type_t<wasm_instruction> opcode)
+{
+	// most compilers should be able to optimize this very well.
+	// very brittle function; sensitive to changes in spec
+	return (opcode > 191) 
+		or ((opcode > 17) and (opcode < 26))
+		or ((opcode >  5) and (opcode < 11))
+		or ((opcode > 27) and (opcode < 32))
+		or ((opcode > 36) and (opcode < 40));
+
+}
 #endif /* WASM_INSTRUCTION_H */

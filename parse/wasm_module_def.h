@@ -9,9 +9,9 @@
 
 struct wasm_module_section_def
 {
-	const wasm_uint8_t id;
-	const std::string name;
-	const std::string data;
+	wasm_uint8_t id;
+	std::string name;
+	std::string data;
 };
 
 enum wasm_module_section_code
@@ -32,13 +32,6 @@ enum wasm_module_section_code
 
 struct wasm_module_def
 {
-
-	union magic_cookie_t{ 
-		wasm_uint32_t value = 0x647;
-		wasm_byte_t bytes[4];
-	};
-	const magic_cookie_t magic_cookie;
-	const wasm_uint32_t = 0x01;
 	std::vector<wasm_module_section_def> sections;
 };
 
@@ -76,6 +69,42 @@ parse_module_section(CharIt begin, CharIt end)
 	return wasm_module_section_def{id, std::move(name), std::move(data)};
 }
 
+template <class CharIt>
+CharIt ensure_module_header(CharIt begin, CharIt end)
+{
+	using char_type = std::iterator_traits<CharIt>::value_type;
+	constexpr std::size_t header_size = 8;
+	constexpr char_type expect_header[8] = {'\0', 'a', 's', 'm', 0, 0, 0, 1};
+	for(std::size_t i = 0; i < 8; ++i)
+	{
+		if(begin == end)
+			throw std::invalid_argument("Provided range is too short to be a WASM module.");
+		else if(expect_header[i] != *begin++)
+			throw std::invalid_argument("Provided range is not prefixed with the expected WASM header.");
+	}
+	return begin;
+}
+
+template <class CharIt>
+wasm_module_def parse_module(CharIt begin, CharIt end)
+{
+	using char_type = std::iterator_traits<CharIt>::value_type;
+	begin = ensure_module_header(begin, end);
+	std::vector<module_section_def> sections;
+	wasm_uint8_t prev_section_code = 0;
+	for(module_section_def current_section; begin != end;)
+	{
+		std::tie(current_section, begin) = parse_module_section(begin, end);
+		auto this_section_code = current_section.id;
+		if(this_section_code > 0 and this_section_code <= prev_section_code)
+		{
+			throw std::runtime_error("Repeated or out-of-order 'known section' "
+						 "encountered while parsing module definition");
+		}
+		sections.push_back(std::move(current_section));
+	}
+	return wasm_module_def{std::move(sections)};
+}
 
 
 

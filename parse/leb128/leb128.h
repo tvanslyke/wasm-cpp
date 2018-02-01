@@ -2,6 +2,7 @@
 #define LEB_128_H
 
 #include "wasm_base.h"
+#include "utilities/endianness.h"
 #include <cstdint>
 #include <tuple>
 
@@ -94,6 +95,7 @@ leb128_decode(CharIt begin, CharIt end)
 				"'leb128_decode()' which is neither signed nor unsigned.");
 }
 
+
 template <class Integer>
 struct LEB128_Decoder
 {
@@ -101,7 +103,9 @@ struct LEB128_Decoder
 	[[nodiscard]]
 	leb128_result<Integer, CharIt> operator()(CharIt begin, CharIt end) const
 	{
-		return leb128_decode<Integer>(begin, end);
+		auto [value, iter] = leb128_decode<Integer>(begin, end);
+		// convert to big endian if system is not little endian
+		return {le_to_system(value), iter};
 	}
 };
 
@@ -116,6 +120,7 @@ static const LEB128_Decoder<std::int_least8_t> leb128_decode_sint8;
 static const LEB128_Decoder<std::int_least16_t> leb128_decode_sint16;
 static const LEB128_Decoder<std::int_least32_t> leb128_decode_sint32;
 static const LEB128_Decoder<std::int_least64_t> leb128_decode_sint64;
+
 
 template <class CharIt>
 leb128_result<std::uint_least8_t, CharIt>

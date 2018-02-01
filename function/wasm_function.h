@@ -8,81 +8,135 @@
 #include <memory>
 #include <string>
 #include <functional>
+#include <unordered_map>
+#include <random>
+#include "utilities/hash_combine.h"
 
+using func_sig_id_t = std::size_t;
 
-struct wasm_function_signature
+struct late_registration_error: 
+	public std::runtime_error
 {
-	using char_type = std::underlying_type_t<wasm_language_type>;
-	template <class String>
-	wasm_function_signature(std::size_t parameter_count, std::size_t local_variables_count, String&& str):
-		param_count(parameter_count), 
-		locals_count(local_variables_count), 
-		types(std::forward<String>(str)),
-		hash_value(compute_hash())
+	late_registration_error():
+		std::runtime_error(
+				"Attempt to register function "
+				"with registrar that has disposed "
+				"of it's contents!")
 	{
 		
 	}
-
-	// std::basic_string to leverage SSO
-	const std::size_t param_count;
-	const std::size_t locals_count;
-	const std::basic_string<char_type> types;
-	const std::size_t hash_value;
-
-private:
-	std::size_t return_type_count() const
-	{
-		return types.size() - param_count;
-	}
-	std::size_t compute_hash() const
-	{
-		auto hasher = std::hash<std::string_view>{};
-		// hash the return types
-		auto hash_v = hasher(std::string_view(types.c_str(), return_type_count()));
-		auto param_types_hash = hasher(std::string_view(types.c_str() + return_type_count(), param_count));
-		// I'm refuse to add boost as a dependency just for hash_combine()
-		hash_v ^= param_types_hash + 0x9e3779b9 + (hash_v << 6) + (hash_v >> 2);
-		return hash_v;
-	}
 };
 
-bool operator==(const wasm_function_signature& left, const wasm_function_signature& right)
-{ 
-	return left.hash_value == right.hash_value 
-		and left.param_count == right.param_count
-		and left.types == right.types;
-}
 
-bool operator==(const wasm_function_signature& left, const wasm_function_signature& right)
+struct FunctionSignatureRegistrar
 {
-	return not (left == right);
-} 
+	using typecode_t = std::underlying_type_t<wasm_language_type>;
+	using sig_string_t = std::basic_string<typecode_t>;
+	using sig_string_view_t = std::basic_string_view<typecode_t>;
 
-namespace std {
 
-	template<>
-	struct hash<wasm_function_signature>
+	template <class TypeString>
+	func_sig_id_t get_signature(TypeString&& ts, std::size_t param_count)
 	{
-		std::size_t operator()(const wasm_function_signature& sig) const
-		{ return sig.hash_value; }
+		if(id_count == 0)
+			throw late_registration_error();
+		FuncSig sig(sig_string_view_t(ts), param_count);
+		if(auto pos = signatures.find(sig); pos != signatures.end())
+			return pos->second;
+		else
+		{
+			sig.types = std::forward<TypeString>(ts);
+			signatures.emplace(std::move(sig), id_count++);
+			return (id_count - 1);
+		}
+	}
+	void dispose(bool debug_mode = false) 
+	{
+		// keep signatures around if in hypothetical future "debug mode".
+		if(not debug_mode)
+			signatures.clear();
+		id_count = 0;
+	}
+private:
+	
+	struct FuncSig{
+		FuncSig():
+			types(sig_string_t{}), param_count(0), 
+			hash_v(compute_hash(types, param_count))
+		{
+			
+		}
+
+		template <class TypeString>
+		FuncSig(TypeString&& ts, std::size_t pc):
+			types(std::forward<TypeString>(ts)), param_count(pc), 
+			hash_v(compute_hash(types, param_count))
+		{
+			
+		}
+
+		sig_string_view_t view() const noexcept
+		{
+			if(types.holds_alternative<sig_string_view_t>())
+				return std::get<sig_string_view_t>();
+			else 
+				return std::get<sig_string_t>();
+		}
+		static std::size_t compute_hash(sig_string_view_t types, std::size_t param_count)
+		{
+			std::size_t t_hash = types_hasher(types);
+			std::size_t p_hash = param_count_hasher(param_count);
+			return hash_combine(t_hash, p_hash);
+		}
+		std::variant<sig_string_t, sig_string_view_t> types;
+		const std::size_t param_count;
+		const std::size_t hash_v;
 	};
 
-} /* namespace std */
+	struct FuncSigHasher {
+		std::size_t operator()(const FuncSig& sig) const
+		{
+			return sig.hash_v;
+		}
+	};
 
+	struct FuncSigEqual {
+		
+		bool operator()(const FuncSig& left, const FuncSig& right) const
+		{
+			return left.param_count == right.param_count 
+				and left.view() == right.view();
+		}
+	};
 
-using wasm_function_signature_handle = std::shared_ptr<wasm_function_signature>;
+	static constexpr std::hash<sig_string_view_t> types_hasher;
+	static constexpr std::hash<std::size_t> param_count_hasher;
+	using signature_defs_t = std::unordered_map<FuncSig, const func_sig_id_t, FuncSigHasher, FuncSigEqual>;
 
-
-
-struct wasm_function
-{
-	using char_type = std::underlying_type_t<wasm_value_t>;
-	wasm_function_signature_handle signature;
-	const std::basic_string<char_type> code;
+	signature_defs_t signatures;
+	func_sig_id_t id_count = 1;
 };
 
 
+struct wasm_function_storage;
+struct wasm_function
+{
+	using opcode_t = std::underlying_type_t<wasm_instruction>;
+	using code_string_t = std::basic_string<opcode_t>;
+	wasm_function(const code_string_t& code_str, func_sig_id_t sig, std::size_t nparams, std::size_t nlocals);
+	const opcode_t* code() const;
+	std::size_t code_size() const;
+	func_sig_id_t signature() const;
+	std::size_t return_count() const;
+	std::size_t locals_count() const;
+	std::size_t parameter_count() const;
+private:
+	struct WasmFunctionDeleter {
+		void operator()(const void* func_storage) const;
+	};
+	using storage_ptr_t = std::unique_ptr<const wasm_function_storage, WasmFunctionDeleter>;
+	storage_ptr_t func_storage;
+};
 
 
 #endif /* WASM_FUNCTION_H */
-

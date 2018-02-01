@@ -63,5 +63,28 @@ inline void be_to_le(char* src_begin, char* src_end, char* dest_begin, char* des
 	std::fill(dest_rbegin, dest_rend, fillvalue);
 }
 
+template <class Integer>
+Integer le_to_system(Integer value)
+{
+	static_assert(std::is_integral_v<Integer>, "Endianness only affects integral types.");
+	if constexpr(sizeof(Integer > 1))
+	{
+		if(is_big_endian())
+			byte_swap(value);
+	}
+	return value;
+}
+
+template <class Integer>
+Integer be_to_system(Integer value)
+{
+	static_assert(std::is_integral_v<Integer>, "Endianness only affects integral types.");
+	if constexpr(sizeof(Integer > 1))
+	{
+		if(not is_big_endian())
+			byte_swap(value);
+	}
+	return value;
+}
 
 #endif /* UTILITIES_ENDIANNESS_H */

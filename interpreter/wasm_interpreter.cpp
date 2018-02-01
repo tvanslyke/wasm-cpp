@@ -1,9 +1,4 @@
-#ifndef WASM_INTERPRETER_H
-#define WASM_INTERPRETER_H
-
-#include "wasm_value.h"
 #include "wasm_instructions.h"
-#include "utilities/bit_cast.h"
 
 struct wasm_control_flow_frame;
 struct wasm_frame
