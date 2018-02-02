@@ -5,12 +5,38 @@
 #include <algorithm>
 #include "wasm_base.h"
 #include "wasm_value.h"
+#include <stdexcept>
+#include <iostream>
 
 struct wasm_linear_memory
 {
 	static constexpr const std::size_t page_size = 64 * 1024;
 	using memvec_t = std::vector<wasm_byte_t>;
-	static const std::size_t maximum_memory_size = memvec_t().max_size() / page_size;
+	
+	wasm_linear_memory(wasm_resizable_limits lims): 
+		limits(lims), memory(limits.initial)
+	{	
+		if(limits.maximum)
+		{
+			try
+			{
+				memory.reserve(limits.maximum.value());
+			}
+			catch(const std::exception& exc)
+			{
+				std::cerr << "WARNING: exception caught while attempting to reserve maximum value for a linear memory instance." << '\n';
+				std::cerr << '\t' << exc.what() << '\n';
+			}
+		}
+	}
+
+	std::size_t max_size() const
+	{
+		if(limits.maximum)
+			return limits.maximum.value();
+		else
+			return memory.max_size();
+	}
 
 	std::size_t size() const
 	{
@@ -104,8 +130,10 @@ struct wasm_linear_memory
 
 
 private:
-	wasm_byte_t* data*() { return memory.data(); }
-	const wasm_byte_t* data*() const { return memory.data(); }
+	wasm_byte_t* data() { return memory.data(); }
+
+	const wasm_byte_t* data() const { return memory.data(); }
+
 	wasm_byte_t* access(std::size_t addr, std::size_t offs, std::size_t len)
 	{
 		const auto* p = static_cast<const wasm_linear_memory*>(this)->access(addr, offs, len);
@@ -124,6 +152,7 @@ private:
 		return p;
 	}
 
+	const wasm_resizable_limits limits;
 	std::vector<wasm_byte_t> memory;
 };
 

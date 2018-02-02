@@ -158,8 +158,50 @@ struct wasm_module_section_parser
 	wasm_uint32_t get_start_section()
 	{ return get_leb128_uint32(); }
 	
-	
+	template <class Func>
+	CallOnWriteIterator iterator_from_callable(Func&& func) const
+	{
+		return CallOnWriteIterator(std::forward<Func>(func));
+	}
+
 private:
+	template <class Func>
+	struct CallOnWriteIterator {
+		using difference_type = void;
+		using value_type = void;
+		using pointer = void;
+		using reference = void;
+		using iterator_category = std::random_access_iterator_tag;
+		
+		CallOnWriteIterator() = default;
+		CallOnWriteIterator(Func fn): func(fn) 
+		{ /* EMPTY CTOR */ }
+
+		CallOnWriteIterator& operator++() 
+		{ return *this; }
+
+		CallOnWriteIterator& operator++(int) 
+		{ return *this; }
+
+		CallOnAssign operator*()
+		{ return CallOnAssign(func); }
+	private:
+		struct CallOnAssign
+		{
+			CallOnAssign(Func& func): f(func) 
+			{ /* EMPTY CTOR */ }
+
+			template <class ValueType>
+			CallOnAssign& operator=(ValueType&& value)
+			{
+				f(std::forward<ValueType>(value));
+				return *this;
+			}
+		private:
+			Func& f;
+		};
+		Func func;
+	};
 	inline wasm_uint32_t get_count()
 	{ return get_leb128_uint32(); }
 

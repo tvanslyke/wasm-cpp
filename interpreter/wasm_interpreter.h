@@ -257,6 +257,7 @@ struct wasm_runtime
 	void load(T wasm_value_t::* member)
 	{
 		assert(module->memories.size());
+		[[maybe_unused]] auto alignment_hint = get_immediate<wasm_ptr_t>();
 		auto offset = get_immediate<wasm_uint32_t>();
 		auto address = pop().u32;
 		if(not module->memories[0].load(address, offset, *sp(), member))
@@ -268,6 +269,7 @@ struct wasm_runtime
 	void narrow_load(T wasm_value_t::* member)
 	{
 		assert(module->memories.size());
+		[[maybe_unused]] auto alignment_hint = get_immediate<wasm_ptr_t>();
 		auto offset = get_immediate<wasm_uint32_t>();
 		auto address = pop().u32;
 		if(not module->memories[0].narrow_load<Sz>(address, offset, *sp(), member))
@@ -279,6 +281,7 @@ struct wasm_runtime
 	void store(T wasm_value_t::* member)
 	{
 		assert(module->memories.size());
+		[[maybe_unused]] auto alignment_hint = get_immediate<wasm_ptr_t>();
 		auto offset = get_immediate<wasm_uint32_t>();
 		auto value = pop();
 		auto address = pop().u32;
@@ -290,6 +293,7 @@ struct wasm_runtime
 	void wrap_store(T wasm_value_t::* member)
 	{
 		assert(module->memories.size());
+		[[maybe_unused]] auto alignment_hint = get_immediate<wasm_ptr_t>();
 		auto offset = get_immediate<wasm_uint32_t>();
 		auto value = pop();
 		auto address = pop().u32;
