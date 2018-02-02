@@ -14,6 +14,8 @@ struct wasm_module_section_def
 	std::string data;
 };
 
+
+
 enum wasm_module_section_code
 {
 	MODULE_CUSTOM 		= 0,

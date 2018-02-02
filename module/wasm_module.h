@@ -9,7 +9,7 @@ struct wasm_module
 	const std::vector<wasm_function_signature_handle> types;
 	const std::vector<wasm_function> functions;
 	std::vector<wasm_linear_memory> memories;
-	std::vector<wasm_value_t> globals;
+	std::vector<wasm_value_t*> globals;
 	const std::vector<bool> global_mutabilities;
 };
 

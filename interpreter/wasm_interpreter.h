@@ -211,7 +211,7 @@ struct wasm_runtime
 	{
 		wasm_uint32_t idx = get_immediate<wasm_uint32_t>();
 		assert(module->globals.size() > idx);
-		push(module->globals[idx]);
+		push(*(module->globals[idx]));
 	}
 	
 	void set_global()

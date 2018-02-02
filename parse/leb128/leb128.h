@@ -115,7 +115,7 @@ static const LEB128_Decoder<std::uint_least16_t> leb128_decode_uint16;
 static const LEB128_Decoder<std::uint_least32_t> leb128_decode_uint32;
 static const LEB128_Decoder<std::uint_least64_t> leb128_decode_uint64;
 
-static const LEB128_Decoder<std::uint_least8_t> leb128_decode_sint7;
+static const LEB128_Decoder<std::int_least8_t> leb128_decode_sint7;
 static const LEB128_Decoder<std::int_least8_t> leb128_decode_sint8;
 static const LEB128_Decoder<std::int_least16_t> leb128_decode_sint16;
 static const LEB128_Decoder<std::int_least32_t> leb128_decode_sint32;

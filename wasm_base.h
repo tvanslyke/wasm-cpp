@@ -1,12 +1,14 @@
 #ifndef WASM_BASE_H
 #define WASM_BASE_H
-#include <cstdint>
-#include <cstddef>
-#include <climits>
 
+
+# include <cstdint>
+# include <cstddef>
+# include <climits>
 static_assert(CHAR_BIT == 8);
 static_assert(std::numeric_limits<double>::is_iec559);
 static_assert(std::numeric_limits<float>::is_iec559);
+
 
 using wasm_sint32_t = std::int_least32_t;
 using wasm_uint32_t = std::uint_least32_t;
