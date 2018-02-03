@@ -48,8 +48,8 @@ struct wasm_runtime
 {
 	wasm_frame* frame_pointer;
 	wasm_value_t* stack_pointer;
-	wasm_module* module;
-
+	wasm_module* main_module;
+	
 
 	// Frame stuff
 	wasm_frame*& ret(){ return fp->ret; }
@@ -210,16 +210,16 @@ struct wasm_runtime
 	void get_global()
 	{
 		wasm_uint32_t idx = get_immediate<wasm_uint32_t>();
-		assert(module->globals.size() > idx);
-		push(*(module->globals[idx]));
+		assert(main_module->globals.size() > idx);
+		push(*(main_module->globals[idx]));
 	}
 	
 	void set_global()
 	{
 		wasm_uint32_t idx = get_immediate<wasm_uint32_t>();
-		assert(module->globals.size() > idx);
-		assert(module->global_mutabilities.size() > idx);
-		module->globals[idx] = pop();
+		assert(main_module->globals.size() > idx);
+		assert(main_module->global_mutabilities.size() > idx);
+		main_module->globals[idx] = pop();
 	}
 
 	void push_frame(const wasm_function& func)
@@ -231,8 +231,8 @@ struct wasm_runtime
 	void call()
 	{
 		wasm_uint32_t idx = get_immediate<wasm_uint32_t>();
-		assert(module->functions.size() > idx);
-		const auto& func = *(module->functions[idx]);
+		assert(main_module->functions.size() > idx);
+		const auto& func = *(main_module->functions[idx]);
 		// TODO: check for stack overflow 
 		auto* new_frame = fp() + fp()->get_next_offset();
 		new(new_frame) wasm_frame(fp(), func);
@@ -256,11 +256,11 @@ struct wasm_runtime
 	template <class T>
 	void load(T wasm_value_t::* member)
 	{
-		assert(module->memories.size());
+		assert(main_module->memories.size());
 		[[maybe_unused]] auto alignment_hint = get_immediate<wasm_ptr_t>();
 		auto offset = get_immediate<wasm_uint32_t>();
 		auto address = pop().u32;
-		if(not module->memories[0].load(address, offset, *sp(), member))
+		if(not main_module->memories[0].load(address, offset, *sp(), member))
 			trap();
 		push();
 	}
@@ -268,11 +268,11 @@ struct wasm_runtime
 	template <std::size_t Sz, class T>
 	void narrow_load(T wasm_value_t::* member)
 	{
-		assert(module->memories.size());
+		assert(main_module->memories.size());
 		[[maybe_unused]] auto alignment_hint = get_immediate<wasm_ptr_t>();
 		auto offset = get_immediate<wasm_uint32_t>();
 		auto address = pop().u32;
-		if(not module->memories[0].narrow_load<Sz>(address, offset, *sp(), member))
+		if(not main_module->memories[0].narrow_load<Sz>(address, offset, *sp(), member))
 			trap();
 		push();
 	}
@@ -280,41 +280,41 @@ struct wasm_runtime
 	template <class T>
 	void store(T wasm_value_t::* member)
 	{
-		assert(module->memories.size());
+		assert(main_module->memories.size());
 		[[maybe_unused]] auto alignment_hint = get_immediate<wasm_ptr_t>();
 		auto offset = get_immediate<wasm_uint32_t>();
 		auto value = pop();
 		auto address = pop().u32;
-		if(not module->memories[0].store(address, offset, value, member))
+		if(not main_module->memories[0].store(address, offset, value, member))
 			trap();
 	}
 
 	template <std::size_t Sz, class T>
 	void wrap_store(T wasm_value_t::* member)
 	{
-		assert(module->memories.size());
+		assert(main_module->memories.size());
 		[[maybe_unused]] auto alignment_hint = get_immediate<wasm_ptr_t>();
 		auto offset = get_immediate<wasm_uint32_t>();
 		auto value = pop();
 		auto address = pop().u32;
-		if(not module->memories[0].wrap_store<Sz>(address, offset, value, member))
+		if(not main_module->memories[0].wrap_store<Sz>(address, offset, value, member))
 			trap();
 	}
 
 	void grow_memory()
 	{
-		assert(module->memories.size());
+		assert(main_module->memories.size());
 		auto v = pop().u32;
-		sp()->i32 = (module->memories[0].grow_memory(v));
+		sp()->i32 = (main_module->memories[0].grow_memory(v));
 		push();
 	}
 
 	void current_memory() 
 	{
-		assert(module->memories.size());
-		sp()->u32 = module->memories[0].current_memory();
+		assert(main_module->memories.size());
+		sp()->u32 = main_module->memories[0].current_memory();
 		push();
-	}	
+	}
 
 	template <class T>
 	void push_immediate(T wasm_value::* member)
@@ -414,7 +414,7 @@ struct wasm_runtime
 
 bool wasm_runtime::eval()
 {
-	switch(pc()++)
+	switch(*pc()++)
 	{
 
 	// BLOCK INSTRUCTIONS

@@ -18,7 +18,7 @@ struct wasm_code_parser
 
 
 	template <class CodeString>
-	wasm_code_parser(CodeString&& codestring):
+	wasm_code_parser(CodeString&& codestring, const module_mappings_t& module_mappings):
 		code(codestring), unbound_labels()
 	{
 		
@@ -31,7 +31,7 @@ struct wasm_code_parser
 		}
 		if (unbound_labels.size() > 0)
 			throw code_parse_error("Code fragment finished with unbound labels (missing END opcode).");
-		else if(as_function and (code.size() > 0) and not (END = code.back()))
+		else if(as_function and (code.size() > 0) and not (wasm_opcode::END == code.back()))
 			throw code_parse_error("Function code does not end with END opcode.");
 		
 		return std::move(code);
@@ -40,6 +40,7 @@ private:
 	
 	code_iterator next_opcode(code_iterator pos)
 	{
+		using wasm_opcode::wasm_instruction;
 		switch(*pos)
 		{
 		case BLOCK:
@@ -83,14 +84,18 @@ private:
 			break;
 		case GET_LOCAL: 	[[fallthrough]]
 		case SET_LOCAL: 	[[fallthrough]]
-		case TEE_LOCAL: 	[[fallthrough]]
-		case GET_GLOBAL:	[[fallthrough]]
-		case SET_GLOBAL:	[[fallthrough]]
-		case CALL:
+		case TEE_LOCAL: 
 			pos = replace_leb128_immediate<wasm_uint32_t>(pos);
 			break;
+		case GET_GLOBAL:	[[fallthrough]]
+		case SET_GLOBAL:
+			pos = replace_leb128_immediate<wasm_uint32_t>(pos, &(module_mapping.globals));
+			break;
+		case CALL:
+			pos = replace_leb128_immediate<wasm_uint32_t>(pos, &(module_mapping.functions));
+			break;
 		case CALL_INDIRECT:
-			pos = replace_leb128_immediate<wasm_uint32_t>(pos);
+			pos = replace_leb128_immediate<wasm_uint32_t>(pos, &(module_mapping.function_signatures));
 			pos = skip_literal_immediate<wasm_uint8_t>(pos);
 			break;
 		case I32_LOAD:		[[fallthrough]] 
@@ -169,12 +174,18 @@ private:
 		return ++pos;
 	}
 
-	template <class Integer>
-	code_iterator replace_leb128_immediate(code_iterator pos)
+	template <class Integer, class Mapping = std::vector<std::ptrdiff_t>>
+	code_iterator replace_leb128_immediate(code_iterator pos, Mapping* mapping = nullptr)
 	{
 		// replace the leb128 encoded integer of type Integer
 		// with the a bit-blit of its decoded system-endianness value 
 		auto [value, stop] = leb128_decode<Integer>(pos, code.end());
+		if(mapping)
+		{
+			assert(value > 0);
+			assert(std::size_t(value) < mapping->size());
+			value = (*mapping)[value];
+		}
 		return replace_with_immediate(pos, stop, value);
 	}
 
@@ -188,6 +199,7 @@ private:
 		pos += count;
 		return {value, pos};
 	}
+
 	template <class Type>
 	code_iterator skip_literal_immediate(code_iterator pos)
 	{
@@ -223,6 +235,7 @@ private:
 		return pos;
 	}
 	code_t code;
+	module_mapping_t& module_mapping;
 	std::stack<std::size_t> unbound_labels;
 };
 

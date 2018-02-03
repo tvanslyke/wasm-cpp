@@ -16,10 +16,13 @@ typedef uint_least8_t opcode_t;
 
 struct wasm_function_storage;
 
+
+// constructor
 const struct wasm_function_storage*
 FunctionStorage_New(const opcode_t* code_begin, const opcode_t* code_end, 
 		size_t nparams, size_t nlocals, size_t nreturns, size_t sig);
 
+// destructor
 void FunctionStorage_Delete(const struct wasm_function_storage* storage);
 
 

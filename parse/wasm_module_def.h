@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include "module/wasm_import.h"
 
 
 struct wasm_module_section_def
@@ -34,7 +35,66 @@ enum wasm_module_section_code
 
 struct wasm_module_def
 {
+
+	wasm_module_def() = delete;
+	wasm_module_def(std::vector<wasm_module_section_def>&& sections);
+	
+	const std::string& type_section() const
+	{ return get_known_section<0>(); }
+	
+	const std::string& import_section() const
+	{ return get_known_section<1>(); }
+	
+	const std::string& function_section() const
+	{ return get_known_section<2>(); }
+	
+	const std::string& table_section() const
+	{ return get_known_section<3>(); }
+	
+	const std::string& memory_section() const
+	{ return get_known_section<4>(); }
+	
+	const std::string& global_section() const
+	{ return get_known_section<5>(); }
+	
+	const std::string& export_section() const
+	{ return get_known_section<6>(); }
+	
+	const std::string& start_section() const
+	{ return get_known_section<7>(); }
+	
+	const std::string& element_section() const
+	{ return get_known_section<8>(); }
+	
+	const std::string& code_section() const
+	{ return get_known_section<9>(); }
+
+	const std::string& data_section() const
+	{ return get_known_section<10>(); }
+
+	const wasm_module_section_def& get_section(std::ptrdiff_t idx) const
+	{
+		assert(idx > 0);
+		assert(idx < sections.size());
+		return sections[idx]; 
+	}
+private:
+	template <std::size_t SectionIndex>
+	const std::string& get_known_section() const
+	{
+		static_assert(SectionIndex < 11);
+		auto ofs = known_section_offsets[SectionIndex];
+		if(ofs > -1)
+			return sections[ofs].data;
+		else
+			return dummy_section_data;
+	}
 	std::vector<wasm_module_section_def> sections;
+	std::array<std::ptrdiff_t, 11> known_section_offsets {
+		-1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1
+	};
+	static const std::string dummy_section_data = "";
 };
 
 template <class CharIt>
@@ -107,6 +167,9 @@ wasm_module_def parse_module(CharIt begin, CharIt end)
 	}
 	return wasm_module_def{std::move(sections)};
 }
+
+
+
 
 
 

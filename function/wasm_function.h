@@ -46,10 +46,41 @@ struct FunctionSignatureRegistrar
 		else
 		{
 			sig.types = std::forward<TypeString>(ts);
-			signatures.emplace(std::move(sig), id_count++);
-			return (id_count - 1);
+			auto [pos, occured] signatures.emplace(std::move(sig), id_count++);
+			assert(occured);
+			backmap.emplace(pos->second, &(pos->first));
+			return pos->second;
 		}
 	}
+
+	std::size_t get_parameter_count_for(func_sig_id_t sig_id) const
+	{
+		auto pos = backmap.find(sig_id);
+		if(pos == backmap.end())
+		{
+			throw_bad_signature_access();
+			return 0;
+		}
+		else
+		{
+			return pos->second->param_count;
+		}
+	}
+	
+	std::size_t get_return_count_for(func_sig_id_t sig_id) const
+	{
+		auto pos = backmap.find(sig_id);
+		if(pos == backmap.end())
+		{
+			throw_bad_signature_access();
+			return 0;
+		}
+		else
+		{
+			return std::get<0>(pos->second->types).size() - pos->second->param_count;
+		}
+	}
+
 	void dispose(bool debug_mode = false) 
 	{
 		// keep signatures around if in hypothetical future "debug mode".
@@ -58,7 +89,13 @@ struct FunctionSignatureRegistrar
 		id_count = 0;
 	}
 private:
-	
+	void throw_bad_signature_access(func_sig_id_t id)
+	{
+		throw std::out_of_range("Attempt to access non-existent "
+					"function signature information with id " 
+					+ std::to_string(sig_id));
+	}
+
 	struct FuncSig{
 		FuncSig():
 			types(sig_string_t{}), param_count(0), 
@@ -112,8 +149,10 @@ private:
 	static constexpr std::hash<sig_string_view_t> types_hasher;
 	static constexpr std::hash<std::size_t> param_count_hasher;
 	using signature_defs_t = std::unordered_map<FuncSig, const func_sig_id_t, FuncSigHasher, FuncSigEqual>;
+	using backmap_t = std::unordered_map<func_sig_id_t, const FuncSig*>;
 
 	signature_defs_t signatures;
+	signature_defs_t backmap;
 	func_sig_id_t id_count = 1;
 };
 

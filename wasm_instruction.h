@@ -1,7 +1,11 @@
 #ifndef WASM_INSTRUCTION_H
 #define WASM_INSTRUCTION_H
+#include <cstddef>
 
-enum wasm_instruction: wasm_uint8_t {
+
+namespace wasm_opcode {
+using wasm_opcode_t = std::uint_least8_t;
+enum wasm_instruction: opcode_t {
 	
 	// BLOCK INSTRUCTIONS
 	BLOCK			= 0x02, 
@@ -212,6 +216,7 @@ enum wasm_instruction: wasm_uint8_t {
 	CURRENT_MEMORY 		= 0x3f,
 };
 
+} /* namespace wasm_opcode */
 
 static constexpr const 
 std::array<std::underlying_type_t<wasm_instruction>> 
@@ -243,4 +248,8 @@ static bool wasm_instruction_dne(
 		or ((opcode > 36) and (opcode < 40));
 
 }
+
+
+
+
 #endif /* WASM_INSTRUCTION_H */
