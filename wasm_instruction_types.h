@@ -4,6 +4,6 @@
 #include "wasm_instruction.h"
 #include <string>
 
-using wasm_code_string_t = std::basic_string<opcode_t>;
+using wasm_code_string_t = std::basic_string<wasm_opcode::wasm_opcode_t>;
 
 #endif /* WASM_INSTRUCTION_TYPES_H */

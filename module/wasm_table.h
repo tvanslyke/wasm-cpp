@@ -6,47 +6,25 @@
 #include "function/wasm_function.h"
 #include "module/wasm_resizable_limits.h"
 
-struct wasm_table_type {
-	const wasm_language_type element_type;
-	const wasm_resizable_limits limits;
-};
-
-bool operator==(const wasm_table_type& left, 
-		const wasm_table_type& right)
-{ 
-	return (left.element_type == other.element_type) 
-		and (left.limits == right.limits);
-}
-
-bool operator!=(const wasm_table_type& left, 
-		const wasm_table_type& right)
-{
-	return not (left == right);
-}
 
 struct wasm_table
 {
 	wasm_table() = delete;
-	wasm_table(wasm_table_type tp): type(tp)
-	{ /* EMPTY CTOR */ }
-
-	virtual ~wasm_table() = default;
-	virtual void access_indirect(std::size_t index) = 0;
-	const wasm_table_type type;
-};
-
-struct wasm_anyfunc_table: public wasm_table
-{
-
-	~wasm_anyfunc_table() override = default;
-
-	virtual void access_indirect(std::size_t index, ) const final override
+	wasm_table(std::vector<std::size_t>&& offsets, wasm_language_type tp, std::optional<std::size_t> maxm): 
+		function_offsets(std::move(offsets)), type(tp), 
+		maximum_size(maxm.has_value() ? maxm.value() : function_offsets.max_size())
 	{
-		
+		assert(type == wasm_language_type::anyfunc);
+	}
+
+	std::size_t access_indirect(std::size_t index) const
+	{
+		return function_offsets[index];
 	}
 private:
-	std::vector<wasm_function*> functions;
-
+	std::vector<std::size_t> function_offsets;
+	const wasm_language_type type;
+	const std::size_t maximum_size;
 };
 
 

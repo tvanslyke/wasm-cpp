@@ -23,18 +23,17 @@ struct wasm_code_parser
 	{
 		
 	}
-	[[nodiscard]] code_t&& parse(bool as_function = true) 
+	[[nodiscard]] code_t& parse(bool as_function = true) 
 	{
 		for(auto pos = code.begin(); pos < code.end(); pos = next_opcode(pos))
-		{
-			
-		}
+		{ /* LOOP */ }
+
 		if (unbound_labels.size() > 0)
 			throw code_parse_error("Code fragment finished with unbound labels (missing END opcode).");
 		else if(as_function and (code.size() > 0) and not (wasm_opcode::END == code.back()))
 			throw code_parse_error("Function code does not end with END opcode.");
 		
-		return std::move(code);
+		return code;
 	}
 private:
 	

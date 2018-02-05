@@ -5,7 +5,6 @@
 #include <string>
 #include <vector>
 #include <algorithm>
-#include "module/wasm_import.h"
 
 
 struct wasm_module_section_def
@@ -89,14 +88,16 @@ private:
 		else
 			return dummy_section_data;
 	}
+	std::string name;
 	std::vector<wasm_module_section_def> sections;
 	std::array<std::ptrdiff_t, 11> known_section_offsets {
 		-1, -1, -1, -1, -1,
 		-1, -1, -1, -1, -1, -1
 	};
-	static const std::string dummy_section_data = "";
+	static const std::string dummy_section_data;
 };
 
+const std::string wasm_module_def::dummy_section_data{};
 template <class CharIt>
 [[nodiscard]]
 std::pair<wasm_module_section_def, CharIt>
@@ -134,7 +135,7 @@ parse_module_section(CharIt begin, CharIt end)
 template <class CharIt>
 CharIt ensure_module_header(CharIt begin, CharIt end)
 {
-	using char_type = std::iterator_traits<CharIt>::value_type;
+	using char_type = typename std::iterator_traits<CharIt>::value_type;
 	constexpr std::size_t header_size = 8;
 	constexpr char_type expect_header[8] = {'\0', 'a', 's', 'm', 0, 0, 0, 1};
 	for(std::size_t i = 0; i < 8; ++i)
@@ -150,11 +151,11 @@ CharIt ensure_module_header(CharIt begin, CharIt end)
 template <class CharIt>
 wasm_module_def parse_module(CharIt begin, CharIt end)
 {
-	using char_type = std::iterator_traits<CharIt>::value_type;
+	using char_type = typename std::iterator_traits<CharIt>::value_type;
 	begin = ensure_module_header(begin, end);
-	std::vector<module_section_def> sections;
+	std::vector<wasm_module_section_def> sections;
 	wasm_uint8_t prev_section_code = 0;
-	for(module_section_def current_section; begin != end;)
+	for(wasm_module_section_def current_section; begin != end;)
 	{
 		std::tie(current_section, begin) = parse_module_section(begin, end);
 		auto this_section_code = current_section.id;

@@ -1,7 +1,28 @@
-#include "function/program_def.h"
+#include "parse/defs/program_def.h"
+#include "parse/code_parser.h"
+#include "module/wasm_linear_memory.h"
 
+void wasm_program_def::add_module(const wasm_module_def& module, bool is_main)
+{
+	module_mapping_t mapping;
+	parse_function_signatures(module, mapping);
+	parse_imports(module, mapping);
+	parse_exports(module, mapping);
+	parse_functions(module, mapping);
+	parse_memories(module, mapping)
+	parse_data(module, mapping);
+	parse_tables(module, mapping);
+	parse_elements(module, mapping);
 
-void wasm_program_def::add_module(const wasm_module_def& module);
+	resolve_initializers(mapping);
+	finalize_function_definitions(mapping);
+	if(is_main)
+	{
+		if(program_main_module_added)
+			throw std::runtime_error("Main module already defined.");
+		add_start_function(module, mapping);
+	}
+}
 	
 	
 	
@@ -172,8 +193,21 @@ void wasm_program_def::parse_memories(const wasm_module_def& module, module_mapp
 		linear_memory_def_t def;
 		bool has_max_size = parser.parse_leb128_uint1();
 		def.initial_size = parser.parse_leb128_uint32();
+		// allocate the initial memory
+		def.initial_memory.resize(def.initial_size * wasm_linear_memory::page_size);
 		if(has_max_size)
+		{
 			def.maximum = parser.parse_leb128_uint32();
+			try 
+			{
+				def.initial_memory.reserve(def.maximum * wasm_linear_memory::page_size);
+			}
+			catch(...)
+			{
+				// TODO: warning
+			}
+		}
+		def.initial_memory.resize(def.initial_size * wasm_linear_memory::page_size);
 		return def;
 	};
 	auto count = parser.parse_leb128_uint32();
@@ -269,6 +303,32 @@ void wasm_program_def::parse_imports(const wasm_module_def& module, module_mappi
 		mappings.map_index(kind, index);
 	}
 }
+
+void wasm_program_def::parse_exports(const wasm_module_def& module, module_mappings_t& mappings)
+{
+	const auto& data = module.export_section();
+	auto begin = data.begin();
+	auto end = data.end();
+	wasm_binary_parser parser(begin, end);
+
+	std::string export_name = module.get_name();
+	std::size_t name_base_size = export_name.size();
+
+	auto count = parser.parse_leb128_uint32();
+	for(auto n = count; n > 0; --n)
+	{
+		export_name.resize(name_base_size);
+		// get the field name
+		export_name += parser.parse_string();
+		auto kind = parser.parse_direct<wasm_uint8_t>();
+		// module-local index
+		auto local_index = parser.parse_leb128_uin32();
+		// get or the program-wide index of the import definition
+		auto index = add_export(import_name, kind);
+		mappings.map_index(kind, index, local_index);
+	}
+}
+
 
 void wasm_program_def::parse_functions(const wasm_module_def& module, module_mappings_t& mappings)
 {
@@ -403,9 +463,18 @@ wasm_program_def::parse_initializer_expression(wasm_binary_parser& parser, const
 	return init_expr;
 }
 
-void wasm_program_def::finalize_code(wasm_code_string_t& code, module_mapping_t& mappings);
 
-void wasm_program_def::finalize_function_definitions(module_mappings_t& mappings);
+void wasm_program_def::finalize_function_definitions(const module_mappings_t& mappings)
+{
+	for(auto idx: mappings.functions)
+	{
+		assert(idx >= 0);
+		auto& func = function_defs.at(idx);
+		if(func.finalized)
+			continue;
+		func.code = std::move(wasm_code_parser(std::move(func.code), mappings).parse());
+	}
+}
 
 
 std::size_t wasm_program_def::resolve_import(const std::string& name, external_kind kind)
@@ -475,40 +544,114 @@ std::size_t wasm_program_def::add_empty_definition(external_kind kind)
 }
 
 
-void wasm_program_def::resolve_initializer_expressions()
+
+
+void wasm_program_def::resolve_initializers(module_mappings_t& mappings)
 {
+	// TODO: non-recursive implementation & cycle detection (for validation)
+	const auto& glbls_map = mappings.globals;
+	auto initialize_global = [&](std::size_t idx)
+	{
+		auto& glbl = global_variable_defs.at(idx);
+		if(glbl.initial_value.has_value())
+		{
+			return;
+		}
+		else if(std::holds_alternative<wasm_value_t>(glbl.initializer))
+		{
+			glbl.initial_value = std::move(std::get<wasm_value_t>(glbl.initializer));
+		}
+		else
+		{
+			assert(std::holds_alternative<std::size_t>(glbl.initializer));
+			auto pos = std::get<std::size_t>(glbl.initializer);
+			const auto& maybe_value = global_variable_defs.at(pos).initial_value;
+			if(not maybe_value.has_value())
+				initialize_global(pos);
+			glbl.initial_value = maybe_value;
+		}
+	};
+	// initialize globals
+	for(auto idx: glbls_map)
+		initialize_global(idx);
+
+	// initialize memories
+	for(auto idx: mapping.memories)
+	{
+		for(const auto& seg: linear_memory_defs.at(idx).init_segments)
+		{
+			if(seg.index() == 0)
+			{
+				auto glbl_idx = std::get<std::size_t>(seg);
+				seg = global_variable_defs.at(glbl_idx).initial_value.value();
+			}
+			auto offset = std::get<wasm_value_t>(seg).u32;
+			std::copy(seg.data.begin(), seg.data.end(), linear_memory_defs.at(idx).initial_memory.begin());
+		}
+	}
+
+	// initialize tables
+	for(auto idx: mapping.tables)
+	{
+		for(const auto& seg: table_defs.at(idx).init_segments)
+		{
+			if(seg.index() == 0)
+			{
+				auto glbl_idx = std::get<std::size_t>(seg);
+				seg = global_variable_defs.at(glbl_idx).initial_value.value();
+			}
+			auto offset = std::get<wasm_value_t>(seg).u32;
+			const auto& func_inds = seg.function_indices;
+			std::copy(func_inds.begin(), func_inds.end(), table_defs.at(idx).functions.begin());
+		}
+	}
+}
+
+
+
+namespace {
+
+struct VisitInitializer {
+	
+	wasm_value_t operator()(wasm_value_t value)
+	{
+		return value;
+	}
+	wasm_value_t operator()(std::size_t idx)
+	{
+		return globals[idx].initial_value.value();
+	}
+	const std::vector<wasm_program_def::global_variable_def_t>& globals;
+};
+
+} /* namespace */
+
+void wasm_program_def::initialize_tables(module_mappings_t& mappings)
+{
+
+}
+
+void wasm_program_def::initialize_linear_memories(module_mappings_t& mappings)
+{
+	auto init_mem_seg = [](linear_memory_def_t& def, std::size_t idx)
+	{
+		auto& seg = def.init_segments.at(idx);
+		auto offset = std::visit(VisitInitializer{global_variable_defs}, seg.offset_initializer).u32;
+		assert(def.initial_memory.size() >= offset + seg.data.size());
+		std::move(data.begin(), data.end(), def.initial_memory.begin() + offset);
+	};
+	for(auto idx: mappings.memories)
+	{
+		for(std::size_t i = 0; i < linear_memory_defs.
+	} 
+}
+
+void wasm_program_def::resolve_initializer_expressions(module_mappings_t& mappings)
+{
+	initialize_globals(mappings);
 	
 }
 
-std::variant<std::size_t, wasm_value_t> wasm_program_def::eval_initializer(const initializer_expression_t& init_expr)
-{
-	std::variant<std::size_t, wasm_value_t> result;
-	assert(init_expr.size() > 0);
-	wasm_binary_parser parser(init_expr.begin(), init_expr.end());
-	auto opcode = parse_opcode(parser);
-	switch(opcode)
-	{
-	case wasm_opcode::I32_CONST:
-		result = wasm_value_t{parser.parse_leb128_sint32()};
-		break;
-	case wasm_opcode::I64_CONST:
-		result = wasm_value_t{parser.parse_leb128_sint32()};
-		break;
-	case wasm_opcode::F32_CONST:
-		result = wasm_value_t{parser.parse_leb128_sint32()};
-		break;
-	case wasm_opcode::F64_CONST:
-		result = wasm_value_t{parser.parse_leb128_sint32()};
-		break;
-	case wasm_opcode::GET_GLOBAL:
-		std::size_t 
-		break;
-	default:
-		throw std::runtime_error("Unsupported opcode " + std::to_string(opcode) + " in initializer expression.");
-	}
-	assert(parser.bytes_remaining() == 1);
-	assert(parse_opcode(parser) == wasm_opcode::END);
-}
-	
+
 
 #endif /* PARSE_DEFS_FUNCTION_DEFS_H */

@@ -7,8 +7,6 @@
 
 struct wasm_module
 {
-
-
 	const wasm_function* function_at(std::size_t index) const;
 	const wasm_linear_memory* memory_at(std::size_t index) const;
 	wasm_linear_memory* memory_at(std::size_t index);

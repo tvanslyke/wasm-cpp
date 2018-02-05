@@ -13,14 +13,14 @@ struct wasm_linear_memory
 	static constexpr const std::size_t page_size = 64 * 1024;
 	using memvec_t = std::vector<wasm_byte_t>;
 	
-	wasm_linear_memory(wasm_resizable_limits lims): 
-		limits(lims), memory(limits.initial)
+	wasm_linear_memory(std::vector<wasm_byte_t>&& mem, std::optional<std::size_t> maxm): 
+		memory(mem), maximum_size(maxm.has_value() ? maxm.value() : (memory.max_size() / page_size))
 	{	
-		if(limits.maximum)
+		if(maxm.has_value() and (maxm.value() < (memory.capacity() / page_size)))
 		{
 			try
 			{
-				memory.reserve(limits.maximum.value());
+				memory.reserve(max_size);
 			}
 			catch(const std::exception& exc)
 			{
@@ -32,10 +32,7 @@ struct wasm_linear_memory
 
 	std::size_t max_size() const
 	{
-		if(limits.maximum)
-			return limits.maximum.value();
-		else
-			return memory.max_size();
+		return maximum_size;
 	}
 
 	std::size_t size() const
@@ -152,8 +149,8 @@ private:
 		return p;
 	}
 
-	const wasm_resizable_limits limits;
 	std::vector<wasm_byte_t> memory;
+	const std::size_t maximum_size;
 };
 
 

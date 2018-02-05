@@ -36,7 +36,7 @@ T bit_downcast(const U& value)
 	static_assert(std::is_trivially_copyable_v<T>
 			and std::is_trivially_copyable_v<U>, 
 			"bit_downcast() is not permitted for non-trivially-copyable types.");
-	static_assert(sizeof(T) =< sizeof(U), 
+	static_assert(sizeof(T) <= sizeof(U), 
 			"cannot bit_downcast() to a larger type");
 	T dest;
 	std::memcpy(&dest, &value, sizeof(T));
@@ -49,7 +49,7 @@ T bit_memcast(const U* mem)
 	static_assert(std::is_trivially_copyable_v<T>
 			and std::is_trivially_copyable_v<U>, 
 			"bit_downcast() is not permitted for non-trivially-copyable types.");
-	static_assert(sizeof(T) =< sizeof(U), 
+	static_assert(sizeof(T) <= sizeof(U), 
 			"cannot bit_memcast() from memory containing a larger type");
 	static_assert((sizeof(T) % sizeof(U)) == 0, 
 			"cannot bit_memcast to a type whose size is not a multiple of the memory type's size");

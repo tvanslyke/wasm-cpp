@@ -3,6 +3,7 @@
 
 #include "wasm_base.h"
 #include "utilities/endianness.h"
+#include "utilities/bit_cast.h"
 #include <cstdint>
 #include <tuple>
 
@@ -41,10 +42,11 @@ leb128_decode_uint(CharIt begin, CharIt end)
 
 template <class IntType, class CharIt>
 [[nodiscard]]
-leb128_result<UIntType, CharIt>
+leb128_result<IntType, CharIt>
 leb128_decode_sint(CharIt begin, CharIt end)
 {
 	using UIntType = std::make_unsigned_t<IntType>;
+	using byte_t = std::uint_least8_t;
 	constexpr byte_t mask = 0b01111111;
 	constexpr std::size_t bitcount = std::numeric_limits<UIntType>::digits;
 	
@@ -52,7 +54,6 @@ leb128_decode_sint(CharIt begin, CharIt end)
 	static_assert(std::is_signed_v<IntType>);
 	assert(begin < end);
 
-	byte_t byte_v = 0;
 	UIntType value{0};
 	IntType result = 0;
 	std::size_t count = 0;
@@ -64,7 +65,7 @@ leb128_decode_sint(CharIt begin, CharIt end)
 		value |= wasm_uint64_t(mask & byte_v) << shift;
 		shift += 7;
 	}
-	if((shift < size) and (byte_v & std::uint_least8_t(0b01000000)))
+	if((shift < bitcount) and (byte_v & std::uint_least8_t(0b01000000)))
 		value |= - (1 << shift);
 
 	// value is now twos-comp repr
@@ -123,8 +124,8 @@ static const LEB128_Decoder<std::int_least64_t> leb128_decode_sint64;
 
 
 template <class CharIt>
-leb128_result<std::uint_least8_t, CharIt>
 [[nodiscard]]
+leb128_result<std::uint_least8_t, CharIt>
 leb128_decode_uint1(CharIt begin, CharIt end)
 {
 	auto v = *begin++;

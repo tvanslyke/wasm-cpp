@@ -45,13 +45,12 @@ struct wasm_binary_parser
 	wasm_sint32_t parse_leb128_sint32();
 	wasm_sint64_t parse_leb128_sint64();
 
-
 	std::string parse_string()
 	{ 
 		std::string dest;
 		auto count = get_count();
 		dest.resize(count);
-		read_sequence(dest.begin(), parse_direct<char>);
+		read_sequence(dest.begin(), &wasm_binary_parser::parse_direct<char>);
 		return dest;
 	}
 
@@ -60,14 +59,14 @@ struct wasm_binary_parser
 	std::size_t bytes_total(std::size_t bytes) const;
 private:
 	inline wasm_uint32_t get_count()
-	{ return get_leb128_uint32(); }
+	{ return parse_leb128_uint32(); }
 
 	template <class DestIt, class T>
-	std::size_t read_sequence(DestIt dest, T (wasm_module_section_parser::* memfunc)())
+	std::size_t read_sequence(DestIt dest, T (wasm_binary_parser::* memfunc)())
 	{
 		auto count = get_count();
 		for(auto n = count; n > 0; --n)
-			*dest++ = this->*memfunc();
+			*dest++ = ((*this).*memfunc)();
 		return count;
 	}
 

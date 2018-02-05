@@ -1,11 +1,14 @@
 #ifndef WASM_INSTRUCTION_H
 #define WASM_INSTRUCTION_H
 #include <cstddef>
+#include <cstdint>
+#include <array>
 
 
 namespace wasm_opcode {
+
 using wasm_opcode_t = std::uint_least8_t;
-enum wasm_instruction: opcode_t {
+enum wasm_instruction: wasm_opcode_t {
 	
 	// BLOCK INSTRUCTIONS
 	BLOCK			= 0x02, 
@@ -57,7 +60,7 @@ enum wasm_instruction: opcode_t {
 	I32_POPCNT		= 0x69,
 	I32_EQZ			= 0x45,
 	// int64
-	I32_ADD			= 0x7c,
+	I64_ADD			= 0x7c,
 	I64_SUB			= 0x7d,
 	I64_MUL			= 0x7e,
 	I64_DIV_S		= 0x7f,
@@ -219,9 +222,7 @@ enum wasm_instruction: opcode_t {
 } /* namespace wasm_opcode */
 
 static constexpr const 
-std::array<std::underlying_type_t<wasm_instruction>> 
-non_instructions {
-	// total of 86; may change in future
+std::array<wasm_opcode::wasm_opcode_t, 84> non_instructions{
 	  6,   7,   8,   9,  10,  
 	 18,  19,  20,  21,  22,  23,  24,  25,  
 	 28,  29,  30,  31,  
@@ -236,8 +237,7 @@ non_instructions {
 	// don't worry, I didn't do this by hand :)
 };
 
-static bool wasm_instruction_dne(
-		std::underlying_type_t<wasm_instruction> opcode)
+static bool wasm_instruction_dne(wasm_opcode::wasm_opcode_t opcode)
 {
 	// most compilers should be able to optimize this very well.
 	// very brittle function; sensitive to changes in spec

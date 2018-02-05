@@ -3,6 +3,7 @@
 
 #include <climits>
 #include <cstdint>
+#include <cstring>
 #include <algorithm>
 
 inline bool is_big_endian()
@@ -13,7 +14,7 @@ inline bool is_big_endian()
 		char bytes[4];
 	} value;
 	value.integer = 0x01020304;
-	return value.c[0] == 1; 
+	return value.bytes[0] == 1; 
 }
 
 template <class T>
@@ -52,7 +53,7 @@ inline void be_to_le(char* src_begin, char* src_end, char* dest_begin, char* des
 	std::size_t len = std::min(srclen, destlen);
 	auto src_rbegin = std::make_reverse_iterator(src_end);
 	auto src_rend = std::make_reverse_iterator(src_begin);
-	dest_begin = std::copy(src_rbegin, src_rbegin + len, dest_rbegin);
+	dest_begin = std::copy(src_rbegin, src_rbegin + len, dest_begin);
 	char fillvalue = 0;
 	if(Signed and srclen < destlen) 
 	{
@@ -60,14 +61,14 @@ inline void be_to_le(char* src_begin, char* src_end, char* dest_begin, char* des
 		if(fillvalue > 0)
 			fillvalue = ~(unsigned char)(0);
 	}
-	std::fill(dest_rbegin, dest_rend, fillvalue);
+	std::fill(dest_begin, dest_end, fillvalue);
 }
 
 template <class Integer>
 Integer le_to_system(Integer value)
 {
 	static_assert(std::is_integral_v<Integer>, "Endianness only affects integral types.");
-	if constexpr(sizeof(Integer > 1))
+	if constexpr(sizeof(Integer) > 1)
 	{
 		if(is_big_endian())
 			byte_swap(value);
@@ -79,7 +80,7 @@ template <class Integer>
 Integer be_to_system(Integer value)
 {
 	static_assert(std::is_integral_v<Integer>, "Endianness only affects integral types.");
-	if constexpr(sizeof(Integer > 1))
+	if constexpr(sizeof(Integer) > 1)
 	{
 		if(not is_big_endian())
 			byte_swap(value);

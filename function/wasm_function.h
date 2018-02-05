@@ -6,12 +6,12 @@
 #include "wasm_value.h"
 #include <vector>
 #include <memory>
-#include <string>
 #include <functional>
+#include <string>
+#include <string_view>
 #include <unordered_map>
-#include <random>
+#include <variant>
 #include "utilities/hash_combine.h"
-
 using func_sig_id_t = std::size_t;
 
 struct late_registration_error: 
@@ -30,7 +30,7 @@ struct late_registration_error:
 
 struct FunctionSignatureRegistrar
 {
-	using typecode_t = std::underlying_type_t<wasm_language_type>;
+	using typecode_t = std::int_least8_t;
 	using sig_string_t = std::basic_string<typecode_t>;
 	using sig_string_view_t = std::basic_string_view<typecode_t>;
 
@@ -40,17 +40,13 @@ struct FunctionSignatureRegistrar
 	{
 		if(id_count == 0)
 			throw late_registration_error();
-		FuncSig sig(sig_string_view_t(ts), param_count);
-		if(auto pos = signatures.find(sig); pos != signatures.end())
-			return pos->second;
-		else
+		auto [pos, happened] = signatures.try_emplace(FuncSig(std::forward<TypeString>(ts), param_count), id_count);
+		if(happened)
 		{
-			sig.types = std::forward<TypeString>(ts);
-			auto [pos, occured] signatures.emplace(std::move(sig), id_count++);
-			assert(occured);
 			backmap.emplace(pos->second, &(pos->first));
-			return pos->second;
+			id_count += 1;
 		}
+		return pos->second;
 	}
 
 	std::size_t get_parameter_count_for(func_sig_id_t sig_id) const
@@ -58,7 +54,7 @@ struct FunctionSignatureRegistrar
 		auto pos = backmap.find(sig_id);
 		if(pos == backmap.end())
 		{
-			throw_bad_signature_access();
+			throw_bad_signature_access(sig_id);
 			return 0;
 		}
 		else
@@ -69,15 +65,14 @@ struct FunctionSignatureRegistrar
 	
 	std::size_t get_return_count_for(func_sig_id_t sig_id) const
 	{
-		auto pos = backmap.find(sig_id);
-		if(pos == backmap.end())
+		if(auto pos = backmap.find(sig_id); pos == backmap.end())
 		{
-			throw_bad_signature_access();
+			throw_bad_signature_access(sig_id);
 			return 0;
 		}
 		else
 		{
-			return std::get<0>(pos->second->types).size() - pos->second->param_count;
+			return pos->second->types.size() - pos->second->param_count;
 		}
 	}
 
@@ -89,7 +84,7 @@ struct FunctionSignatureRegistrar
 		id_count = 0;
 	}
 private:
-	void throw_bad_signature_access(func_sig_id_t id)
+	static void throw_bad_signature_access(func_sig_id_t sig_id) 
 	{
 		throw std::out_of_range("Attempt to access non-existent "
 					"function signature information with id " 
@@ -99,7 +94,7 @@ private:
 	struct FuncSig{
 		FuncSig():
 			types(sig_string_t{}), param_count(0), 
-			hash_v(compute_hash(types, param_count))
+			hash_v(compute_hash())
 		{
 			
 		}
@@ -107,25 +102,20 @@ private:
 		template <class TypeString>
 		FuncSig(TypeString&& ts, std::size_t pc):
 			types(std::forward<TypeString>(ts)), param_count(pc), 
-			hash_v(compute_hash(types, param_count))
+			hash_v(compute_hash())
 		{
 			
 		}
 
-		sig_string_view_t view() const noexcept
+		std::size_t compute_hash() const
 		{
-			if(types.holds_alternative<sig_string_view_t>())
-				return std::get<sig_string_view_t>();
-			else 
-				return std::get<sig_string_t>();
-		}
-		static std::size_t compute_hash(sig_string_view_t types, std::size_t param_count)
-		{
-			std::size_t t_hash = types_hasher(types);
+			std::size_t t_hash = 0;
+			for(auto chr: types)
+				t_hash = hash_combine(t_hash, std::hash<typecode_t>{}(chr));
 			std::size_t p_hash = param_count_hasher(param_count);
 			return hash_combine(t_hash, p_hash);
 		}
-		std::variant<sig_string_t, sig_string_view_t> types;
+		const sig_string_t types;
 		const std::size_t param_count;
 		const std::size_t hash_v;
 	};
@@ -142,17 +132,17 @@ private:
 		bool operator()(const FuncSig& left, const FuncSig& right) const
 		{
 			return left.param_count == right.param_count 
-				and left.view() == right.view();
+				and left.types == right.types;
 		}
 	};
 
-	static constexpr std::hash<sig_string_view_t> types_hasher;
-	static constexpr std::hash<std::size_t> param_count_hasher;
+	static const std::hash<sig_string_t> types_hasher;
+	static const std::hash<std::size_t> param_count_hasher;
 	using signature_defs_t = std::unordered_map<FuncSig, const func_sig_id_t, FuncSigHasher, FuncSigEqual>;
 	using backmap_t = std::unordered_map<func_sig_id_t, const FuncSig*>;
 
 	signature_defs_t signatures;
-	signature_defs_t backmap;
+	backmap_t backmap;
 	func_sig_id_t id_count = 1;
 };
 
@@ -160,7 +150,7 @@ private:
 struct wasm_function_storage;
 struct wasm_function
 {
-	using opcode_t = std::underlying_type_t<wasm_instruction>;
+	using opcode_t = wasm_opcode::wasm_opcode_t;
 	using code_string_t = std::basic_string<opcode_t>;
 	wasm_function(const code_string_t& code_str, func_sig_id_t sig, std::size_t nparams, std::size_t nlocals);
 	const opcode_t* code() const;

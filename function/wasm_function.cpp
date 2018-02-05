@@ -46,3 +46,7 @@ void wasm_function::WasmFunctionDeleter::operator()(const void* func_storage)
 	FunctionStorage_Delete(func_storage);
 }
 
+
+static const std::hash<sig_string_view_t> FunctionSignatureRegistrar::types_hasher{};
+static const std::hash<std::size_t> FunctionSignatureRegistrar::param_count_hasher{};
+
