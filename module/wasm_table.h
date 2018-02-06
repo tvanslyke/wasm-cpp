@@ -4,7 +4,6 @@
 #include "wasm_base.h"
 #include "wasm_value.h"
 #include "function/wasm_function.h"
-#include "module/wasm_resizable_limits.h"
 
 
 struct wasm_table

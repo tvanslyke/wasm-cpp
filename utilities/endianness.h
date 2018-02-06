@@ -26,8 +26,8 @@ void byte_swap(T& value)
 	std::memcpy(&value, bytes, sizeof(value));
 }
 
-template <bool Signed = false>
-inline void le_to_be(char* src_begin, char* src_end, char* dest_begin, char* dest_end)
+template <bool Signed, class SrcCharT, class DestCharT>
+inline void le_to_be(const SrcCharT* src_begin, const SrcCharT* src_end, DestCharT* dest_begin, DestCharT* dest_end)
 {
 	std::size_t srclen = src_end - src_begin;
 	std::size_t destlen = dest_end - dest_begin;
@@ -45,8 +45,8 @@ inline void le_to_be(char* src_begin, char* src_end, char* dest_begin, char* des
 	std::fill(dest_rbegin, dest_rend, fillvalue);
 }
 
-template <bool Signed = false>
-inline void be_to_le(char* src_begin, char* src_end, char* dest_begin, char* dest_end)
+template <bool Signed, class SrcCharT, class DestCharT>
+inline void be_to_le(const SrcCharT* src_begin, const SrcCharT* src_end, DestCharT* dest_begin, DestCharT* dest_end)
 {
 	std::size_t srclen = src_end - src_begin;
 	std::size_t destlen = dest_end - dest_begin;

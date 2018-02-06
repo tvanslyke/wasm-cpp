@@ -7,7 +7,8 @@
 #include "wasm_value.h"
 #include <stdexcept>
 #include <iostream>
-
+#include <cstring>
+#include "utilities/endianness.h"
 struct wasm_linear_memory
 {
 	static constexpr const std::size_t page_size = 64 * 1024;
@@ -20,7 +21,7 @@ struct wasm_linear_memory
 		{
 			try
 			{
-				memory.reserve(max_size);
+				memory.reserve(max_size() * page_size);
 			}
 			catch(const std::exception& exc)
 			{
@@ -46,7 +47,7 @@ struct wasm_linear_memory
 	std::ptrdiff_t grow_memory(std::size_t page_count)
 	{
 		std::size_t old_size = size();
-		if(old_size > (maximum_memory_size - page_count))
+		if(old_size > (max_size() - page_count))
 			return -1;
 		try
 		{
@@ -84,7 +85,6 @@ struct wasm_linear_memory
 	template <std::size_t B, class T>
 	bool narrow_load(std::size_t addr, std::size_t offs, wasm_value_t& dest, T wasm_value_t::* member) const
 	{
-		static_assert(std::is_unsigned_v<T>);
 		static_assert(B <= sizeof(T));
 		const auto* src = access(addr, offs, B);
 		if(not src)
@@ -92,7 +92,7 @@ struct wasm_linear_memory
 		if(is_big_endian())
 		{
 			char bytes[sizeof(T)];
-			le_to_be<std::is_signed_v<T>>(src, src + B, bytes, bytes + sizeof(T));
+			le_to_be<std::is_signed_v<T>>(src, src + B, (char*)bytes, bytes + sizeof(T));
 			std::memcpy(&(dest.*member), bytes, sizeof(T));
 		}
 		else

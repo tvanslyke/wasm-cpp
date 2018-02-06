@@ -30,14 +30,14 @@ struct bit_rshift
 {
 	decltype(auto) operator()(const T& lhs, const T& rhs) const
 	{
-		constexpr std::size_t bits = std::numeric_limits<T>::digits;
+		using UnsignedT = std::make_unsigned_t<T>;
+		constexpr std::size_t bits = std::numeric_limits<UnsignedT>::digits;
 		const auto shift = rhs % bits;
 		if constexpr(std::is_unsigned_v<T>)
 			return lhs >> shift; 
 		else
 		{
-			UnsignedT = std::make_unsigned_t<T>;
-			UsignedT lhs_u = bit_cast<UnsignedT>(lhs);
+			UnsignedT lhs_u = bit_cast<UnsignedT>(lhs);
 			bool msb = (UnsignedT(1) << (bits - 1)) & lhs_u;
 			lhs_u >>= shift;
 			if(msb)
@@ -60,43 +60,47 @@ struct bit_rshift<void>
 	{ return bit_rshift<T>{}(lhs, rhs); }
 };
 
-template <class T>
+template <class T = void>
 struct bit_rrotate
 {
 	decltype(auto) operator()(const T& lhs, const T& rhs) const
 	{
+		static_assert(std::is_unsigned_v<T>);
 		constexpr std::size_t bits = std::numeric_limits<T>::digits;
 		const auto shift = rhs % bits;
-		return (v >> shift) | (v << (bits - shift));
+		return (lhs >> shift) | (lhs << (bits - shift));
 	}
 };
+
 template <>
-struct bit_rrotate
+struct bit_rrotate<void>
 {
 	template <class T>
 	decltype(auto) operator()(const T& lhs, const T& rhs) const
-	{ return bit_rotate_right<T>{}(lhs, rhs); }
+	{ return bit_rrotate<T>{}(lhs, rhs); }
 };
 
-template <class T>
+template <class T = void>
 struct bit_lrotate
 {
 	decltype(auto) operator()(const T& lhs, const T& rhs) const
 	{
+		static_assert(std::is_unsigned_v<T>);
 		constexpr std::size_t bits = std::numeric_limits<T>::digits;
 		const auto shift = rhs % bits;
-		return (v << shift) | (v >> (bits - shift));
+		return (lhs << shift) | (lhs >> (bits - shift));
 	}
 };
+
 template <>
-struct bit_lrotate
+struct bit_lrotate<void>
 {
 	template <class T>
 	decltype(auto) operator()(const T& lhs, const T& rhs) const
-	{ return bit_rotate_right<T>{}(lhs, rhs); }
+	{ return bit_lrotate<T>{}(lhs, rhs); }
 };
 
-template <class T>
+template <class T = void>
 struct bit_clz
 {
 	decltype(auto) operator()(const T& val) const
@@ -106,14 +110,14 @@ struct bit_clz
 };
 
 template <>
-struct bit_clz
+struct bit_clz<void>
 {
 	template <class T>
 	decltype(auto) operator()(const T& val) const
 	{ return bit_clz<T>{}(val); }
 };
 
-template <class T>
+template <class T = void>
 struct bit_ctz
 {
 	decltype(auto) operator()(const T& val) const
@@ -121,14 +125,14 @@ struct bit_ctz
 };
 
 template <>
-struct bit_ctz
+struct bit_ctz<void>
 {
 	template <class T>
 	decltype(auto) operator()(const T& val) const
 	{ return bit_ctz<T>{}(val); }
 };
 
-template <class T>
+template <class T = void>
 struct bit_popcnt
 {
 	decltype(auto) operator()(const T& val) const
@@ -136,7 +140,7 @@ struct bit_popcnt
 };
 
 template <>
-struct bit_popcnt
+struct bit_popcnt<void>
 {
 	template <class T>
 	decltype(auto) operator()(const T& val) const

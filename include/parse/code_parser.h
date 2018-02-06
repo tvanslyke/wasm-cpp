@@ -3,6 +3,7 @@
 
 #include "wasm_base.h"
 #include "wasm_instruction.h"
+#include "utilities/immediates.h"
 #include <string>
 #include <algorithm>
 #include <stack>
@@ -48,6 +49,7 @@ private:
 			break;
 		case LOOP:
 			pos = replace_block_signature(pos);
+			break;
 		case BR: 	[[fallthrough]]
 		case BR_IF:
 			++pos;
@@ -63,7 +65,7 @@ private:
 			unbound_labels.push(pos - code.begin());
 			break;
 		case ELSE:
-			pos = bind_top_label(pos);
+			pos = bind_top_label(pos + 1);
 			unbound_labels.push(pos - code.begin());
 			break;
 		case END:
@@ -202,23 +204,21 @@ private:
 	template <class Type>
 	code_iterator skip_literal_immediate(code_iterator pos)
 	{
-		auto [_, it] = extract_literal_immediate(pos);
-		return it;
+		return pos + opcode_width_of<Type>();
 	}
-
 
 	template <class Type>
 	code_iterator replace_with_immediate(code_iterator begin, code_iterator end, Type value)
 	{
-		constexpr std::size_t bytecount = 
-			(sizeof(value) + (sizeof(value) % sizeof(opcode_t)));
-		std::array<opcode_t, bytecount> buff;
+		constexpr auto num_opcodes = opcode_width_of<Type>();
+		std::array<opcode_t, num_opcodes> buff;
 		buff.fill(0);
 		std::memcpy(buff.data(), &value, sizeof(value));
 		std::size_t index = pos - code.begin();
-		code.replace(pos, stop, buff.begin(), buff.end());
-		return code.begin() + index + buff.size();
+		code.replace(pos, end, buff.begin(), buff.end());
+		return code.begin() + index + num_opcodes;
 	}
+
 	template <class Type>
 	code_iterator insert_immediate(code_iterator begin, Type value)
 	{
@@ -228,7 +228,11 @@ private:
 	code_iterator replace_leb128_immediate_array(code_iterator pos)
 	{
 		wasm_uint32_t count = 0;
-		std::tie(count, pos) = leb128_decode<wasm_uint32_t>(pos, code.end());
+		{
+			code_iterator count_stop;
+			std::tie(count, count_stop) = leb128_decode<wasm_uint32_t>(pos, code.end());
+			pos = replace_with_immediate(pos, stop, count);
+		}
 		for(; count > 0; --count)
 			pos = replace_leb128_immediate<Integer>(pos);
 		return pos;

@@ -1,6 +1,4 @@
-#include "wasm_base.h"
-#include "parse/defs/program_def.h"
-
+#include "interpreter/wasm_interpreter.h"
 
 
 int main()

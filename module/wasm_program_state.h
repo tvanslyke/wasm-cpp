@@ -2,6 +2,8 @@
 #define MODULE_WASM_MODULE_H
 
 #include "function/wasm_function.h"
+#include "module/wasm_table.h"
+#include "module/wasm_linear_memory.h"
 #include <vector>
 
 struct wasm_program_def;

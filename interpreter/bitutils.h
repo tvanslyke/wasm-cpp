@@ -76,13 +76,13 @@ template <class T>
 struct GNU_Intrin
 {
 	static constexpr const std::size_t bits = 
-		std::numeric_limits<T>::digits;
+		std::numeric_limits<std::make_unsigned_t<T>>::digits;
 	static constexpr const std::size_t int_bits = 
-		std::numeric_limits<int>::digits;
+		std::numeric_limits<unsigned int>::digits;
 	static constexpr const std::size_t long_bits = 
-		std::numeric_limits<long>::digits;
+		std::numeric_limits<unsigned long>::digits;
 	static constexpr const std::size_t long_long_bits = 
-		std::numeric_limits<long long>::digits;
+		std::numeric_limits<unsigned long long>::digits;
 	using UnsignedT = std::make_unsigned_t<T>;
 	static constexpr std::size_t clz(T value)
 	{

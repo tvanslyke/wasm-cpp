@@ -1,34 +1,62 @@
 #ifndef INTERPRETER_WASM_CALL_STACK_H
 #define INTERPRETER_WASM_CALL_STACK_H
 
-#include <stddef.h>
+#include "interpreter/WasmCallStack.h"
+#include "function/wasm_function.h"
+#include <memory>
+#include <cstddef>
 
+struct wasm_call_stack
+{
+	wasm_call_stack(std::size_t size):
+		impl(WasmCallStack_New(size))
+	{
+		if(not impl)
+			throw std::bad_alloc();
+	}
 
-typedef struct wasm_call_stack_ wasm_call_stack;
+	const opcode_t* code() const
+	{ return WasmCallStack_Code(self()); }
 
+	const opcode_t* code_next() 
+	{ return WasmCallStack_CodeNext(self()); }
 
-// constructor
-wasm_call_stack* WasmCallStack_New(size_t size);
+	const opcode_t* code_advance(std::size_t count) 
+	{ return WasmCallStack_CodeAdvance(self(), count); }
 
+	const opcode_t* code_jump(const opcode_t* label)
+	{ return WasmCallStack_CodeJump(self(), label); }
 
-// destructor
-wasm_frame* WasmCallStack_Delete(wasm_call_stack* self);
+	bool try_pop_frame() 
+	{ return !WasmCallStack_PopFrame(self()); }
+		
+	void fast_pop_frame() 
+	{ WasmCallStack_FastPopFrame(self()); }
 
+	bool push_frame(const wasm_function& func) 
+	{ return !WasmCallStack_PushFrame(self(), func.get()); }
 
-// accesors
-const opcode_t* WasmCallStack_Code(const wasm_call_stack* self);
+	wasm_value_t* locals() 
+	{ return WasmCallStack_Locals(self()); }
 
+private:
 
-// modifiers
-int WasmCallStack_PushFrame(wasm_call_stack* self, const struct wasm_function_storage* func);
+	const WasmCallStack* self() const
+	{ return impl.get(); }
 
-void WasmCallStack_FastPopFrame(wasm_call_stack* self);
+	WasmCallStack* self() 
+	{ return impl.get(); }
 
-int WasmCallStack_PopFrame(wasm_call_stack* self);
+	struct WasmCallStackDeleter {
+		
+		void operator()(void* mem) const
+		{
+			WasmCallStack_Delete(mem);
+		}
+	};
 
-const opcode_t* WasmCallStack_CodeNext(wasm_frame* self);
-
-const opcode_t* WasmCallStack_CodeAdvance(wasm_frame* self, size_t count);
+	std::unique_ptr<WasmCallStack, WasmCallStackDeleter> impl;
+};
 
 
 #endif /* INTERPRETER_WASM_CALL_STACK_H */

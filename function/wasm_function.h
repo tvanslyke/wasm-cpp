@@ -165,6 +165,9 @@ private:
 	};
 	using storage_ptr_t = std::unique_ptr<const wasm_function_storage, WasmFunctionDeleter>;
 	storage_ptr_t func_storage;
+	const wasm_function_storage* get() const
+	{ return func_storage.get(); }
+	friend class wasm_call_stack;
 };
 
 
