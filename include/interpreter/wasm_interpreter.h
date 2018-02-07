@@ -205,6 +205,8 @@ struct wasm_runtime
 	{
 		[[maybe_unused]]
 		auto [stack_ptr, label, arity] = pop_cf_frame();
+		(void)stack_ptr;
+		(void)label;
 		push_cf_frame_lookahead(arity);
 		branch_top();
 	}

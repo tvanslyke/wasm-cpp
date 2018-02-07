@@ -640,6 +640,7 @@ void wasm_program_def::finalize_function_code(wasm_code_string_t& code, const mo
 	
 	auto replace_local_index = [&](const auto& mapping) {
 		[[maybe_unused]] auto [value, stop, _unused] = LEB128_Decoder<wasm_uint32_t>{}(code.begin() + pos, code.end());
+		(void)_unused;
 		// cast from size_t
 		value = static_cast<wasm_uint32_t>(mapping.at(value));
 		opcode_t buff[sizeof(wasm_uint32_t)] = {0};
@@ -652,6 +653,7 @@ void wasm_program_def::finalize_function_code(wasm_code_string_t& code, const mo
 	
 	auto replace_leb128_uint32 = [&]() {
 		[[maybe_unused]] auto [value, stop, _unused] = leb128_decode_uint32(code.begin() + pos, code.end());
+		(void)_unused;
 		opcode_t buff[sizeof(wasm_uint32_t)] = {0};
 		// copy to buffer
 		std::memcpy(buff, &value, sizeof(wasm_uint32_t)); 

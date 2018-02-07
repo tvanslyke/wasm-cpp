@@ -237,7 +237,7 @@ std::array<wasm_opcode::wasm_opcode_t, 84> non_instructions{
 	// don't worry, I didn't do this by hand :)
 };
 
-static bool wasm_instruction_dne(wasm_opcode::wasm_opcode_t opcode)
+inline bool wasm_instruction_dne(wasm_opcode::wasm_opcode_t opcode)
 {
 	// most compilers should be able to optimize this very well.
 	// very brittle function; sensitive to changes in spec
@@ -246,7 +246,6 @@ static bool wasm_instruction_dne(wasm_opcode::wasm_opcode_t opcode)
 		or ((opcode >  5) and (opcode < 11))
 		or ((opcode > 27) and (opcode < 32))
 		or ((opcode > 36) and (opcode < 40));
-
 }
 
 

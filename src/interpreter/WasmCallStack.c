@@ -1,6 +1,9 @@
 #include "interpreter/WasmCallStack.h"
 #include "function/wasm_function_storage.h"
 #include <stdalign.h>
+#include <string.h>
+#include <stdlib.h>
+
 typedef struct WasmFrame_ WasmFrame;
 
 typedef struct WasmFrameBase_ {
@@ -109,7 +112,7 @@ static const opcode_t* WasmFrame_CodeAdvance(WasmFrame* self, size_t count)
 	return WasmFrameBase_CodeAdvance(WasmFrame_Base(self), count);
 }
 
-static const opcode_t* WasmFrame_CodeJump(WasmFrameBase* self, const opcode_t* label)
+static const opcode_t* WasmFrame_CodeJump(WasmFrame* self, const opcode_t* label)
 {
 	return WasmFrameBase_CodeJump(WasmFrame_Base(self), label);
 }
@@ -223,32 +226,38 @@ static const WasmCallStackBase* WasmCallStack_ConstBase(const WasmCallStack* sel
 	return &(self->base);
 }
 
-static size_t* WasmCallStack_RemainingPointer(WasmCallStackBase* self)
+static size_t* WasmCallStack_RemainingPointer(WasmCallStack* self)
 {
 	return WasmCallStackBase_RemainingPointer(WasmCallStack_Base(self));
 }
 
-static size_t WasmCallStack_Remaining(const WasmCallStackBase* self)
+#ifdef __GNUC__ 
+__attribute__((unused))
+#endif
+static size_t WasmCallStack_Remaining(const WasmCallStack* self)
 {
 	return WasmCallStackBase_Remaining(WasmCallStack_ConstBase(self));
 }
 
-static size_t WasmCallStack_Allocated(const WasmCallStackBase* self)
+#ifdef __GNUC__ 
+__attribute__((unused))
+#endif
+static size_t WasmCallStack_Allocated(const WasmCallStack* self)
 {
 	return WasmCallStackBase_Allocated(WasmCallStack_ConstBase(self));
 }
 
-static const WasmFrame* WasmCallStack_ConstCurrentFrame(const WasmCallStackBase* self)
+static const WasmFrame* WasmCallStack_ConstCurrentFrame(const WasmCallStack* self)
 {
 	return WasmCallStackBase_ConstCurrentFrame(WasmCallStack_ConstBase(self));
 }
 
-static WasmFrame* WasmCallStack_CurrentFrame(WasmCallStackBase* self)
+static WasmFrame* WasmCallStack_CurrentFrame(WasmCallStack* self)
 {
 	return WasmCallStackBase_CurrentFrame(WasmCallStack_Base(self));
 }
 
-static WasmFrame* WasmCallStack_SetCurrentFrame(WasmCallStackBase* self, WasmFrame* new_frame)
+static WasmFrame* WasmCallStack_SetCurrentFrame(WasmCallStack* self, WasmFrame* new_frame)
 {
 	return WasmCallStackBase_SetCurrentFrame(WasmCallStack_Base(self), new_frame);
 }
@@ -258,6 +267,10 @@ static WasmFrame* WasmCallStack_BaseFrame(WasmCallStack* self)
 	return self->frames;
 }
 
+
+#ifdef __GNUC__ 
+__attribute__((unused))
+#endif
 static const WasmFrame* WasmCallStack_ConstBaseFrame(const WasmCallStack* self)
 {
 	return self->frames;

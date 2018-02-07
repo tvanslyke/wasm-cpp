@@ -126,8 +126,9 @@ static const LEB128_Decoder<std::int_least64_t> leb128_decode_sint64;
 template <class CharIt>
 [[nodiscard]]
 leb128_result<std::uint_least8_t, CharIt>
-leb128_decode_uint1(CharIt begin, CharIt end)
+leb128_decode_uint1(CharIt begin, [[maybe_unused]] CharIt end)
 {
+	assert(begin != end);
 	auto v = *begin++;
 	assert(not (v & std::uint_least8_t(0b10000000)) and "Attempt to decode 1-bit leb128, but there are more bytes to parse!");
 	assert(not (v & std::uint_least8_t(0b01111110)) and "Attempt to decode 1-bit leb128, but non-least-significant-bits are set!");
