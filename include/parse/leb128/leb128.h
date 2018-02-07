@@ -8,7 +8,7 @@
 #include <tuple>
 
 // honestly idk why I'm bothering
-static constexpr const bool is_twos_comp()
+static constexpr bool is_twos_comp()
 {
 	return (~signed(0)) == -signed(1);
 }
@@ -104,9 +104,9 @@ struct LEB128_Decoder
 	[[nodiscard]]
 	leb128_result<Integer, CharIt> operator()(CharIt begin, CharIt end) const
 	{
-		auto [value, iter] = leb128_decode<Integer>(begin, end);
+		auto [value, iter, count] = leb128_decode<Integer>(begin, end);
 		// convert to big endian if system is not little endian
-		return {le_to_system(value), iter};
+		return {le_to_system(value), iter, count};
 	}
 };
 
@@ -131,7 +131,7 @@ leb128_decode_uint1(CharIt begin, CharIt end)
 	auto v = *begin++;
 	assert(not (v & std::uint_least8_t(0b10000000)) and "Attempt to decode 1-bit leb128, but there are more bytes to parse!");
 	assert(not (v & std::uint_least8_t(0b01111110)) and "Attempt to decode 1-bit leb128, but non-least-significant-bits are set!");
-	return {v & 0x01, begin};
+	return {v & 0x01, begin, 1};
 }
 
 #endif /* LEB_128_H */

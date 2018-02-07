@@ -74,9 +74,10 @@ struct wasm_module_def
 	const wasm_module_section_def& get_section(std::ptrdiff_t idx) const
 	{
 		assert(idx > 0);
-		assert(idx < sections.size());
+		assert(std::size_t(idx) < sections.size());
 		return sections[idx]; 
 	}
+	const std::string& get_name() const { return name; }
 private:
 	template <std::size_t SectionIndex>
 	const std::string& get_known_section() const
@@ -86,7 +87,7 @@ private:
 		if(ofs > -1)
 			return sections[ofs].data;
 		else
-			return dummy_section_data;
+			return dummy_section_data();
 	}
 	std::string name;
 	std::vector<wasm_module_section_def> sections;
@@ -94,10 +95,13 @@ private:
 		-1, -1, -1, -1, -1,
 		-1, -1, -1, -1, -1, -1
 	};
-	static const std::string dummy_section_data;
+	static inline const std::string& dummy_section_data()
+	{
+		static const std::string dummy_data{};
+		return dummy_data;
+	}
 };
 
-const std::string wasm_module_def::dummy_section_data{};
 template <class CharIt>
 [[nodiscard]]
 std::pair<wasm_module_section_def, CharIt>
@@ -151,7 +155,6 @@ CharIt ensure_module_header(CharIt begin, CharIt end)
 template <class CharIt>
 wasm_module_def parse_module(CharIt begin, CharIt end)
 {
-	using char_type = typename std::iterator_traits<CharIt>::value_type;
 	begin = ensure_module_header(begin, end);
 	std::vector<wasm_module_section_def> sections;
 	wasm_uint8_t prev_section_code = 0;
@@ -168,8 +171,6 @@ wasm_module_def parse_module(CharIt begin, CharIt end)
 	}
 	return wasm_module_def{std::move(sections)};
 }
-
-
 
 
 

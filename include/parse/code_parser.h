@@ -3,6 +3,7 @@
 
 #include "wasm_base.h"
 #include "wasm_instruction.h"
+#include "parse/wasm_program_def.h"
 #include "utilities/immediates.h"
 #include <string>
 #include <algorithm>
@@ -13,10 +14,10 @@ struct code_parse_error: public std::runtime_error {};
 
 struct wasm_code_parser
 {
-	using opcode_t = std::underlying_type_t<wasm_instruction>;
+	using opcode_t = wasm_opcode::wasm_opcode_t;
 	using code_t = std::basic_string<opcode_t>;
 	using code_iterator = std::basic_string<opcode_t>::iterator;
-
+	using module_mappings_t = wasm_program_def::module_mappings_t;
 
 	template <class CodeString>
 	wasm_code_parser(CodeString&& codestring, const module_mappings_t& module_mappings):
@@ -40,7 +41,7 @@ private:
 	
 	code_iterator next_opcode(code_iterator pos)
 	{
-		using wasm_opcode::wasm_instruction;
+		using namespace wasm_opcode;
 		switch(*pos)
 		{
 		case BLOCK:

@@ -1,9 +1,0 @@
-#ifndef PARSE_TYPE_SECTION_H
-#define PARSE_TYPE_SECTION_H
-
-
-
-
-
-
-#endif /* PARSE_TYPE_SECTION_H */

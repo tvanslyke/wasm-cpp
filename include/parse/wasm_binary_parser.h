@@ -54,9 +54,9 @@ struct wasm_binary_parser
 		return dest;
 	}
 
-	std::size_t bytes_remaining(std::size_t bytes) const;
-	std::size_t bytes_consumed(std::size_t bytes) const;
-	std::size_t bytes_total(std::size_t bytes) const;
+	std::size_t bytes_remaining() const;
+	std::size_t bytes_consumed() const;
+	std::size_t bytes_total() const;
 private:
 	inline wasm_uint32_t get_count()
 	{ return parse_leb128_uint32(); }
