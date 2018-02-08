@@ -96,6 +96,10 @@ static size_t WasmFrame_LocalsCount(const WasmFrame* self)
 	return WasmFrameBase_LocalsCount(WasmFrame_ConstBase(self));
 }
 
+static wasm_value_t* WasmFrame_Locals(WasmFrame* self)
+{
+	return self->locals;
+}
 
 static const opcode_t* WasmFrame_Code(const WasmFrame* self)
 {
@@ -133,18 +137,28 @@ static size_t WasmFrame_SizeOf(const WasmFrame* self)
 
 static WasmFrame* WasmFrame_PushFrame(WasmFrame* self, const struct wasm_function_storage* func, size_t* bytes_total)
 {
+	// number of bytes to the beginning of the next frame
 	const size_t offset = WasmFrame_SizeOf(self);
 	WasmFrameBase base = {
 		.ret = self,
 		.program_counter = FunctionStorage_Code(func),
 		.locals_count = FunctionStorage_LocalsCount(func),
 	};
+	// see how large the next frame will be
 	size_t bytes_used = WasmFrameBase_SizeOf(&base);
+	// if it's too large, return  NULL to indicate stack overflow
 	if((*bytes_total) < bytes_used)
 		return NULL;
-	
+	// initialize the frame metadata (frame base)
 	void* next_frame = (char*)self + offset;
 	memcpy(next_frame, &base, sizeof(base)); 
+	size_t locals_count = WasmFrame_LocalsCount(next_frame);
+	if(locals_count > 0)
+	{
+		// set locals to zero (required by wasm standard)
+		wasm_value_t* locals = WasmFrame_Locals(next_frame);
+		memset(locals, 0,  locals_count * sizeof(*locals));
+	}
 	*bytes_total -= bytes_used;
 	return next_frame;
 }
@@ -161,10 +175,6 @@ static int WasmFrame_IsBaseFrame(WasmFrame* self)
 	return !WasmFrame_ReturnAddress(self);
 }
 
-static wasm_value_t* WasmFrame_Locals(WasmFrame* self)
-{
-	return self->locals;
-}
 
 
 

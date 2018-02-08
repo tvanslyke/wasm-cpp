@@ -4,7 +4,7 @@
 #include "wasm_base.h"
 #include "parse/leb128/leb128.h"
 #include "function/wasm_function.h"
-
+#include <optional>
 
 struct wasm_binary_parser
 {
@@ -54,6 +54,41 @@ struct wasm_binary_parser
 		return dest;
 	}
 
+	template <class DestIt>
+	void parse_raw_bytes(std::size_t count, DestIt dest)
+	{
+		assert(assert_space_for(count));
+		std::copy(pos, pos + count, dest);
+	}
+
+	template <class Type>
+	std::vector<Type> parse_resizable_limits(std::size_t scale_factor = 1)
+	{
+		std::vector<Type> vec;
+		bool has_max = parse_leb128_uint1();
+		auto init_size = scale_factor * parse_leb128_uint32();
+		if(has_max)
+		{
+			try
+			{
+				vec.reserve(parse_leb128_uint32() * scale_factor);
+			}
+			catch(...)
+			{
+				std::cerr << "WARNING: Attempt to reserve maximum size for table/memory failed.\n";
+			}
+		}
+		vec.resize(init_size);
+		return vec;
+	}
+	
+	std::pair<wasm_value_t, bool> parse_initializer_expression();
+	
+	void set_remaining(std::size_t count)
+	{
+		assert(assert_space_for(count));
+		end = pos + count;
+	}
 	std::size_t bytes_remaining() const;
 	std::size_t bytes_consumed() const;
 	std::size_t bytes_total() const;
