@@ -7,8 +7,8 @@
 struct WasmTableObject
 {
 	// construct from encoded type signature
-	inline WasmObjectType get_type() const override 
-        { return WasmObjectType(WasmObjectType::function_typecode); }
+	inline WasmObjectKind get_type() const override 
+        { return WasmObjectKind(WasmObjectKind::function_typecode); }
 
 	bool is_defined() const
 	{ return defined; }

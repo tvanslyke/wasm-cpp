@@ -6,7 +6,7 @@ WasmTypeObject::WasmTypeObject(wasm_byte_t typecode):
 	if(value() >= 4)
 		throw std::runtime_error("Bad value_type code (" 
 			+ std::to_string(value()) 
-			+ ") encountered when constructing WasmObjectType.");
+			+ ") encountered when constructing WasmObjectKind.");
 }
 
 const std::string& WasmTypeObject::name() const

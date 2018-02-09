@@ -14,19 +14,19 @@ struct WasmFunctionObject:
 {
 	// construct from encoded type signature
 	template <class ... Args>
-	WasmFunctionObject(Args&& ... args):
-		signature(std::forward<Args>(args)...)
+	WasmFunctionObject(const WasmFunctionSignature* sig):
+		signature(sig)
 	{
 		
 	}
-        inline WasmObjectType get_type() const override 
-        { return WasmObjectType(WasmObjectType::function_typecode); }
+        inline WasmObjectKind get_type() const override 
+        { return WasmObjectKind(WasmObjectKind::function_typecode); }
 	
 	bool is_defined() const override
 	{ return defined; }
 	
 	// property
-	const WasmFunctionSignature signature;
+	const WasmFunctionSignature* signature;
 private:
 	const char* define_from_encoding(const char* begin, const char* end) override;
 	std::basic_string<wasm_opcode::wasm_opcode_t> code;

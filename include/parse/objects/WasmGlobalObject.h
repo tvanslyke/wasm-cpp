@@ -9,8 +9,8 @@ struct WasmGlobalObject:
         public WasmObject
 {
 	WasmGlobalObject
-        inline WasmObjectType get_type() const override 
-        { return WasmObjectType(WasmObjectType::global_typecode); }
+        inline WasmObjectKind get_type() const override 
+        { return WasmObjectKind(WasmObjectKind::global_typecode); }
 	
 	bool is_defined() override
 	{ return defined; }

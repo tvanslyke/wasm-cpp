@@ -5,6 +5,7 @@
 #include "parse/leb128/leb128.h"
 #include "function/wasm_function.h"
 #include <optional>
+#include "parse/objects/WasmFunctionSignature.h"
 
 struct wasm_binary_parser
 {
@@ -81,6 +82,8 @@ struct wasm_binary_parser
 		vec.resize(init_size);
 		return vec;
 	}
+
+	WasmFunctionSignature parse_function_signature();
 	
 	std::pair<wasm_value_t, bool> parse_initializer_expression();
 	

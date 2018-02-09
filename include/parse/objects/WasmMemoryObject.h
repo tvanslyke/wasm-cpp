@@ -8,8 +8,8 @@
 struct WasmMemoryObject: 
         public WasmObject
 {
-        inline WasmObjectType get_type() const override 
-        { return WasmObjectType(WasmObjectType::memory_typecode); }
+        inline WasmObjectKind get_type() const override 
+        { return WasmObjectKind(WasmObjectKind::memory_typecode); }
 	bool is_defined() const
 	{ return defined; }
 

@@ -5,9 +5,9 @@
 #include <unordered_map>
 #include <cstdint>
 
-struct WasmObjectType {
+struct WasmObjectKind {
 
-	WasmObjectType(wasm_byte_t typecode);
+	WasmObjectKind(wasm_byte_t typecode);
 	const std::string& name() const;
 	wasm_byte_t value() const;
 
@@ -15,6 +15,12 @@ struct WasmObjectType {
 	static const wasm_byte_t table_typecode    = 1;
 	static const wasm_byte_t memory_typecode   = 2;
 	static const wasm_byte_t global_typecode   = 3;
+
+	bool operator==(const WasmObjectKind& other)
+	{ return typecode_ == other.typecode_; }
+	
+	bool operator==(const WasmObjectKind& other)
+	{ return not ((*this) == other); }
 private:
 	const wasm_byte_t typecode_;
 	static const std::array<std::string, 4> type_names_;
@@ -23,7 +29,7 @@ private:
 struct WasmObject 
 {
 	virtual ~WasmObject() = default;
-	virtual WasmObjectType get_type() const = 0;
+	virtual WasmObjectKind get_type() const = 0;
 	
 	virtual void initialize_segment(const char* begin, const char* end)
 	{
