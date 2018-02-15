@@ -15,7 +15,7 @@ struct WasmModuleObject
 		auto [pos, success] = imports.try_emplace(std::forward<String>(field_name), imp);
 		if(not success)
 			double_import_or_export_error(imp, *pos, "import");
-		get_index_space(imp->get_type()).add_import(imp);
+		get_index_space(imp->get_kind()).add_import(imp);
 	}
 
 	template <class String>
@@ -24,7 +24,7 @@ struct WasmModuleObject
 		auto [pos, success] = exports.try_emplace(std::forward<String>(field_name), imp);
 		if(not success)
 			double_import_or_export_error(imp, *pos, "export");
-		get_index_space(imp->get_type()).add_export(index, imp);
+		get_index_space(imp->get_kind()).add_export(index, imp);
 	}
 
 	WasmObject* get_import(const std::string& field_name)
@@ -75,13 +75,13 @@ private:
 		}
 		void add_import(WasmObject* object)
 		{
-			assert(object->get_type() == type);
+			assert(object->get_kind() == type);
 			imports.push_back(object);
 		}
 		
 		void add_export(wasm_uint32_t index, WasmObject* object)
 		{
-			assert(object->get_type() == type);
+			assert(object->get_kind() == type);
 			if(index > imports.size())
 			{
 				
@@ -125,7 +125,7 @@ private:
 
 		void add(WasmObject* object)
 		{
-			assert(object->get_type() == type);
+			assert(object->get_kind() == type);
 			at(import_count + (pos++)) = object;
 		}
 
@@ -171,7 +171,7 @@ private:
 		throw std::runtime_error("Attempt to add " 
 			+ imp_or_exp + " " + field_name
 			+ " with type "
-			+ obj->get_type().name()
+			+ obj->get_kind().name()
 			+ " to module "
 			+ name 
 			+ ", but an " 
@@ -179,7 +179,7 @@ private:
 			+ " with that name already exists in module "
 			+ name 
 			+ " and has type "
-			+ existing->get_type().name() 
+			+ existing->get_kind().name() 
 			+ ".";
 	}
 	

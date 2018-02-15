@@ -4,36 +4,18 @@
 #include <string>
 #include <unordered_map>
 #include <cstdint>
-
-struct WasmObjectKind {
-
-	WasmObjectKind(wasm_byte_t typecode);
-	const std::string& name() const;
-	wasm_byte_t value() const;
-
-	static const wasm_byte_t function_typecode = 0;
-	static const wasm_byte_t table_typecode    = 1;
-	static const wasm_byte_t memory_typecode   = 2;
-	static const wasm_byte_t global_typecode   = 3;
-
-	bool operator==(const WasmObjectKind& other)
-	{ return typecode_ == other.typecode_; }
-	
-	bool operator==(const WasmObjectKind& other)
-	{ return not ((*this) == other); }
-private:
-	const wasm_byte_t typecode_;
-	static const std::array<std::string, 4> type_names_;
-};
+#include "parse/objects/WasmObjectType.h"
 
 struct WasmObject 
 {
 	virtual ~WasmObject() = default;
-	virtual WasmObjectKind get_type() const = 0;
+
+	WasmObjectKind get_kind() const
+	{ return type.kind(); }
 	
 	virtual void initialize_segment(const char* begin, const char* end)
 	{
-		std::string message = "initialize_segment() invalid for object of type" + get_type().name() + ".";
+		std::string message = "initialize_segment() invalid for object of type" + get_kind().name() + ".";
 		throw std::runtime_error(message);
 	}
 	
@@ -46,9 +28,10 @@ struct WasmObject
 
 protected:
 	virtual const char* define_from_encoding(const char* begin, const char* end) = 0;
+	WasmObjectType type;
 };
 
-	
+
 
 
 #endif /* PARSE_OBJECTS_WASM_OBJECT_H */

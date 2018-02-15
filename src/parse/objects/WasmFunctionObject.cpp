@@ -1,6 +1,6 @@
 #include "parse/objects/WasmFunctionObject.cpp"
 #include "parse/wasm_binary_parser.h"
-
+#include "parse/objects/WasmModuleObject.h"
 
 const char* WasmFunctionObject::define_from_encoding(const char* begin, const char* end)
 {
@@ -27,4 +27,39 @@ bool WasmFunctionObject::is_defined() const
 {
 	return defined;
 }
+
+
+
+struct WasmFunctionObjectType:
+	public WasmObjectTypeImpl
+{
+	WasmFunctionObjectType(const char* begin, const char* end, const WasmModuleObject& module)
+	{
+		wasm_uint32_t type_index
+	}
+	~WasmFunctionObjectType() override = default;
+
+	bool equals(const WasmObjectType& other) const override
+	{
+		return *sig == *(dynamic_cast<const WasmFunctionObjectType&>(other).sig);
+	}
+
+	const WasmFunctionSignature* sig;
+};
+
+std::pair<WasmObjectType, const char*>
+WasmFunctionObject::make_type(const char* begin, const char* end, const WasmModuleObject& module)
+{
+	wasm_binary_parser parser(begin, end);
+	auto type_index = parser.parse_leb128_uint32();
+	auto sig = module.get_signature(type_index);
+	return WasmObjectType(std::make_unique<WasmObjectTypeImpl>(
+	
+}
+
+
+
+
+
+
 

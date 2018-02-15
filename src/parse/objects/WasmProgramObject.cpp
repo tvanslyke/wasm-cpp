@@ -34,7 +34,7 @@ void WasmProgramObjects::add_imports()
 			auto kind = parser.parse_direct<wasm_uint8_t>();
 			auto type = WasmObjectKind(kind);
 			auto imported_object = get_module(module_name).get_export(field_name);
-			assert(imported_object.get_type() == type);
+			assert(imported_object.get_kind() == type);
 			module.add_import(std::move(field_name), imported_object);
 		}
 	}

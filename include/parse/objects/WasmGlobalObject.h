@@ -9,7 +9,7 @@ struct WasmGlobalObject:
         public WasmObject
 {
 	WasmGlobalObject
-        inline WasmObjectKind get_type() const override 
+        inline WasmObjectKind get_kind() const override 
         { return WasmObjectKind(WasmObjectKind::global_typecode); }
 	
 	bool is_defined() override
@@ -24,6 +24,8 @@ struct WasmGlobalObject:
 		assert(not is_initialized());
 		return value.u32;
 	}
+	static std::pair<WasmObjectType, const char*>
+	make_type(const char* begin, const char* end, WasmObjectKind kind, const WasmModuleObject& module);
 private:
 	const char* define_from_encoding(const char* begin, const char* end) override;
 	wasm_sint8_t typecode;
@@ -34,6 +36,8 @@ private:
 	bool initialized = false;
 };
 	
+template <>
+WasmObjectType WasmObjectType::make_type<WasmFunctionObject, true>(const char* begin, const char* end);
 
 
 #endif /* PARSE_OBJECTS_WASM_FUNCTION_OBJECT_H */

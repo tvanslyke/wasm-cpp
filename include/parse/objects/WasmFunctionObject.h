@@ -19,7 +19,7 @@ struct WasmFunctionObject:
 	{
 		
 	}
-        inline WasmObjectKind get_type() const override 
+        inline WasmObjectKind get_kind() const override 
         { return WasmObjectKind(WasmObjectKind::function_typecode); }
 	
 	bool is_defined() const override
@@ -27,6 +27,8 @@ struct WasmFunctionObject:
 	
 	// property
 	const WasmFunctionSignature* signature;
+	static std::pair<WasmObjectType, const char*>
+	make_type(const char* begin, const char* end, WasmObjectKind kind, const WasmModuleObject& module);
 private:
 	const char* define_from_encoding(const char* begin, const char* end) override;
 	std::basic_string<wasm_opcode::wasm_opcode_t> code;
@@ -34,7 +36,5 @@ private:
 	bool defined = false;
 
 };
-	
-
 
 #endif /* PARSE_OBJECTS_WASM_FUNCTION_OBJECT_H */
