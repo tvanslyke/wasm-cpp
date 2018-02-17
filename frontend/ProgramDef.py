@@ -1,9 +1,9 @@
 from ModuleDef import ModuleDef
-from WasmBinaryParser import WasmBinaryParser, finalize_code
+from WasmBinaryParser import WasmBinaryParser, finalized_code
 from IdDict import IdDict
-from collections import defaultdict, nametuple
+from collections import defaultdict, namedtuple
 import constants as consts
-import array as c_array
+import array as array
 
 class ResizableLimits:
 	
@@ -18,7 +18,7 @@ class ResizableLimits:
 
 	@property	
 	def initial_size(self):
-		return self._type
+		return self._initial_size
 
 	@property	
 	def maximum_size(self):
@@ -57,7 +57,7 @@ class Function(Importable):
 		@property
 		def signature(self):
 			return self._signature
-		
+	
 		@property
 		def kind(self):
 			return 3
@@ -65,7 +65,7 @@ class Function(Importable):
 
 	def __init__(self, tp, locals_types = None, code = None):
 		super(Function, self).__init__(Function.Type, tp)
-		self.locals_types = bytes(bytearray(locals_types))
+		self.locals_types = locals_types
 		self.code = code
 	
 	@property	
@@ -73,25 +73,32 @@ class Function(Importable):
 		return 0
 
 	def define(self, locals_types, code):
-		assert isinstance(tp, Function.Type)
 		assert self.locals_types is None
 		assert self.code is None
 		self.locals_types = bytes(bytearray(locals_types))
 		self.code = bytes(code)
 
+	def serialize(self):
+		fmt = "=L=L{}s".format(len(self.code))
+		return struct.pack(self.type.signature, len(self.locals_types), self.code)
+		
 
 class Table(Importable):
 
-	class Type:
+	class Type(ResizableLimits):
 		
 		def __init__(self, elem_type, initial_size, max_size = None):
-			self.elem_type = elem_type
-			self.limits = ResizableLimits(initial_size, max_size)
+			super(Table.Type, self).__init__(initial_size, max_size)
+			self._elem_type = elem_type
 		
 		def __eq__(self, other):
 			return (isinstance(other, Table.Type) 
 				and self.elem_type == other.elem_type
-				and self.limits == other.limits)
+				and super(Table.Type, self) == super(Table.Type, other))
+
+		@property
+		def elem_type(self):
+			return self._elem_type
 
 		@property	
 		def kind(self):
@@ -99,7 +106,7 @@ class Table(Importable):
 
 	def __init__(self, tp):
 		super(Table, self).__init__(Table.Type, tp)
-		self.table = [None] * self.type.limits.initial_size
+		self.table = [None] * self.type.initial_size
 
 	@property	
 	def kind(self):
@@ -110,6 +117,16 @@ class Table(Importable):
 		assert offset >= 0
 		assert all(elem is None for elem in self.table[offset: offset + length])
 		self.table[offset: offset + length] = values
+	
+	def serialize(self):
+		serialized_elems = array.array('q', ((-1 if item is None else item) for item in self.table)).tobytes()
+		fmt = "=qb{}s".format(len(serialized_elems))
+		maxm_size = self.type.maximum_size
+		if maxm_size is None:
+			maxm_size = -1
+		return struct.pack(fmt, maxm_size, self.type.elem_type, serialized_elems)
+		
+
 
 
 class Memory(Importable):
@@ -124,9 +141,9 @@ class Memory(Importable):
 			return 2
 
 	def __init__(self, tp):
-		super(Memory, self).__init__(Table.Type, tp)
+		super(Memory, self).__init__(Memory.Type, tp)
 		page_size = consts.LinearMemory.page_size 
-		self.memory = bytearray(self.type.limits.initial_size * page_size)
+		self.memory = bytearray(self.type.initial_size * page_size)
 	
 	@property	
 	def kind(self):
@@ -138,7 +155,14 @@ class Memory(Importable):
 		# TODO: a more rigorous check for overlapping initializers
 		assert all((elem == 0) for elem in self.memory[offset: offset + length])
 		self.memory[offset: offset + length] = values
-		
+
+	def serialize(self):
+		fmt = "=q{}s".format(len(self.memory))
+		maxm_size = self.type.maximum_size
+		if maxm_size is None:
+			maxm_size = -1
+		return struct.pack(self.type.initial_size, maxm_size, len(self.memory), self.memory)
+
 
 class Global(Importable):
 	
@@ -219,7 +243,29 @@ class Global(Importable):
 		self._initial_value = other.initial_value
 		if isinstance(self.initial_value, Global):
 			self.initial_value.add_dependency(self)
-	
+
+	_typecode_map = {
+		-0x01: (b'l', b'L'),
+		-0x02: (b'q', b'Q'),
+		-0x03: b'f',
+		-0x01: b'd',
+	}	
+	def serialize(self):
+		fmt = b"=?=c={}"
+		fmt_chr = Global._typecode_map[self.type.typecode]
+		if isinstance(fmt_chr, tuple):
+			assert isinstance(self.initial_value, int)
+			if self.initial_value < 0:
+				fmt_chr = fmt_chr[0]
+			else:
+				fmt_chr = fmt_chr[1]
+		else:
+			assert isinstance(self.initial_value, float)
+		
+		fmt.format(fmt_chr)
+		return struct.pack(self.type.mutable, fmt_chr, self.initial_value)
+
+
 class Module:
 
 	def __init__(self, module_def, program_def):
@@ -238,19 +284,31 @@ class Module:
 		)
 		self.import_counts = array.array('L', (0, 0, 0, 0))
 
-	@attribute
+	def __repr__(self):
+		return ('Module(name={}, num_function_signatures={}, '
+			'num_functions={}, num_tables={}, num_memories={} '
+			'num_globals={})'.format(self.module_def.name,
+				len(self.function_signatures), 
+				len(self.functions), 
+				len(self.tables), 
+				len(self.memories), 
+				len(self.globals),
+			)
+		)
+
+	@property
 	def function_import_count(self):
 		return self.import_counts[0]
 
-	@attribute
+	@property
 	def table_import_count(self):
 		return self.import_counts[1]
 
-	@attribute
+	@property
 	def memory_import_count(self):
 		return self.import_counts[2]
 
-	@attribute
+	@property
 	def global_import_count(self):
 		return self.import_counts[3]
 
@@ -268,7 +326,11 @@ class Module:
 	def name(self):
 		return self.module_def.name
 
-
+	def __getitem__(self, section_name):
+		try:
+			return self.module_def[section_name]
+		except KeyError:
+			return b''
 
 
 
@@ -277,18 +339,19 @@ class ProgramDef:
 	Types = (Function, Table, Memory, Global)
 	IdMapTuple = namedtuple("IdMapTuple", "functions, tables, memories, globals")
 	__init_expr_opcodes = {
-		InitExpr.get_global: (lambda parser, module: module.globals[parser.parse_unsigned_leb128(32)]), 
-		InitExpr.i32_const:  (lambda parser, module: parser.parse_signed_leb128(32)), 
-		InitExpr.i64_const:  (lambda parser, module: parser.parse_signed_leb128(64)), 
-		InitExpr.f32_const:  (lambda parser, module: parser.parse_format('f')), 
-		InitExpr.f64_const:  (lambda parser, module: parser.parse_format('d')), 
+		consts.InitExpr.get_global: (lambda parser, module: module.globals[parser.parse_unsigned_leb128(32)]), 
+		consts.InitExpr.i32_const:  (lambda parser, module: parser.parse_signed_leb128(32)), 
+		consts.InitExpr.i64_const:  (lambda parser, module: parser.parse_signed_leb128(64)), 
+		consts.InitExpr.f32_const:  (lambda parser, module: parser.parse_format('f')), 
+		consts.InitExpr.f64_const:  (lambda parser, module: parser.parse_format('d')), 
 	}
 	
 
 
-	def __init__(self, main_module_path, *imported_module_pathes):
-		self.modules = ((ModuleDef(main_module_path),) + 
-			tuple(ModuleDef(path) for path in imported_module_pathes))
+	def __init__(self, main_module, *imported_modules):
+		self.modules = ((ModuleDef(*main_module),) + 
+			tuple(ModuleDef(*module) for module in imported_modules))
+		self.modules = tuple(Module(module_def, self) for module_def in self.modules)
 		self.module_names = {module.name for module in self.modules}
 		self.function_signatures = IdDict()
 		self.exports = defaultdict(lambda: defaultdict(None))
@@ -297,9 +360,34 @@ class ProgramDef:
 		self.start_function = None
 		self.id_maps = ProgramDef.IdMapTuple(IdDict(), IdDict(), IdDict(), IdDict())
 
-	@attribute 
+
+	@property 
 	def main(self):
 		return self.modules[0]
+
+
+	def _define_program(self):
+		initialize_sequence = (
+			ProgramDef._read_type_section,
+			ProgramDef._read_import_section,
+			ProgramDef._read_function_section,
+			ProgramDef._read_table_section,
+			ProgramDef._read_memory_section,
+			ProgramDef._read_global_section,
+			ProgramDef._read_element_section,
+			ProgramDef._read_data_section
+		)
+		finalize_sequence = (
+			ProgramDef._read_code_section,
+		)
+		for read_section in initialize_sequence:
+			for module in self.modules:
+				read_section(self, module)
+		self._read_start_section()
+		self._map_modules()
+		for read_section in finalize_sequence:
+			for module in self.modules:
+				read_section(self, module)
 
 	def _get_section_parser(self, module, section_name):
 		data = module[section_name]
@@ -312,9 +400,8 @@ class ProgramDef:
 		assert (module.function_signatures is None)
 		parser = self._get_section_parser(module, "Type")
 		if parser is not None:
-			parser = WasmBinaryParser(data)
 			count = parser.parse_unsigned_leb128(32)
-			get_sig = lambda: self.function_signatures[parser.parser_function_type()]
+			get_sig = lambda: self.function_signatures[parser.parse_func_type()]
 			module.function_signatures = tuple(get_sig() for _ in range(count))
 		else:
 			module.function_signatures = tuple()
@@ -356,8 +443,7 @@ class ProgramDef:
 		if parser is None:
 			return None
 		count = parser.parse_unsigned_leb128(32)
-		assert module.function_count == 0
-		module.function_count = count
+		assert module.function_import_count == len(module.functions)
 		funcs = module.functions
 		sigs = module.function_signatures
 		sz = len(funcs)
@@ -370,11 +456,10 @@ class ProgramDef:
 		if parser is None:
 			return None
 		count = parser.parse_unsigned_leb128(32)
-		assert module.table_count == 0
-		module.table_count = count
+		assert module.table_import_count == len(module.tables)
 		tables = module.tables
 		sz = len(tables)
-		make_table = lambda: Table(Table.Type(parser.parse_table_type()))
+		make_table = lambda: Table(Table.Type(*parser.parse_table_type()))
 		tables[sz:sz + count] = (make_table() for _ in range(count))
 	
 	def _read_memory_section(self, module):
@@ -382,11 +467,10 @@ class ProgramDef:
 		if parser is None:
 			return None
 		count = parser.parse_unsigned_leb128(32)
-		assert module.memory_count == 0
-		module.memory_count = count
+		assert module.memory_import_count == len(module.memories)
 		memories = module.memories
 		sz = len(memories)
-		make_memory = lambda: Memory(Memory.Type(parser.parse_memory_type()))
+		make_memory = lambda: Memory(Memory.Type(*parser.parse_memory_type()))
 		memories[sz:sz + count] = (make_memory() for _ in range(count))
 	
 	def _read_global_section(self, module):
@@ -394,8 +478,7 @@ class ProgramDef:
 		if parser is None:
 			return None
 		count = parser.parse_unsigned_leb128(32)
-		assert module.global_count == 0
-		module.global_count = count
+		assert module.global_import_count == len(module.globals)
 		globs = module.globals
 		sz = len(globs)
 		def make_global():
@@ -442,7 +525,7 @@ class ProgramDef:
 		parser = self._get_section_parser(self.modules[0], "Start")
 		if parser is None:
 			raise ValueError("Main module {} has no start function!".format(self.modules[0].name))
-		self.start_function = self.modules[0].functions[parser.read_unsigned_leb128(32)]
+		self.start_function = self.modules[0].functions[parser.parse_unsigned_leb128(32)]
 		
 	def _read_element_section(self, module):
 		parser = self._get_section_parser(module, "Element")
@@ -465,18 +548,23 @@ class ProgramDef:
 			return None
 		count = parser.parse_unsigned_leb128(32)
 		for i in range(count):
-			body_size = parse.parse_unsigned_leb128(32)
-			local_entries = parse.parse_unsigned_leb128(32)
+			body_size = parser.parse_unsigned_leb128(32)
+			body_parser = WasmBinaryParser(parser.view[:body_size])
+			assert parser.view[body_size - 1] == consts.Opcode.END
+			local_entries = body_parser.parse_unsigned_leb128(32)
 			locals_types = bytearray()
 			for j in range(local_entries):
-				nlocals = parser.parse_unsigned_leb128(32)
+				nlocals = body_parser.parse_unsigned_leb128(32)
 				sz = len(locals_types)
-				typecode = parser.parse_signed_leb128(7)
-				assert typecode in LanguageType.value_types
+				typecode = body_parser.parse_signed_leb128(7)
+				if not (typecode in consts.LanguageType.value_types):
+					raise ValueError("Invalid 'value_type' (typecode={}) encountered "
+						"while parsing function local variables definition.".format(hex(typecode)))
 				locals_types[sz: sz + nlocals] = (typecode for _ in range(nlocals))
-			code, count = finalized_code(self.parser.remaining_data, module)
-			module.functions[i + module.function_import_count].define(locals_types, code)
-			parser.ignore(count)
+			code, count = finalized_code(body_parser.remaining_data, module)
+			offset = module.functions[i + module.function_import_count]
+			self.functions[offset].define(locals_types, code)
+			parser.ignore(body_size)
 			
 	def _read_data_section(self, module):
 		parser = self._get_section_parser(module, "Data")
@@ -497,11 +585,12 @@ class ProgramDef:
 		all_memories = IdDict()
 		all_globals = IdDict()
 		for module in self.modules:
-			module.functions = c_array('L', (all_functions[f] for f in module.functions))
-			module.tables = c_array('L', (all_functions[t] for t in module.tables))
-			module.memories = c_array('L', (all_functions[m] for m in module.memories))
-			module.globals = c_array('L', (all_globals[g] for g in module.globals))
+			module.functions = array.array('L', (all_functions[f] for f in module.functions))
+			module.tables = array.array('L', (all_tables[t] for t in module.tables))
+			module.memories = array.array('L', (all_memories[m] for m in module.memories))
+			module.globals = array.array('L', (all_globals[g] for g in module.globals))
 		
+		self.start_function = all_functions[self.start_function]
 		self.functions = tuple(sorted(all_functions.keys(), key=lambda k: all_functions[k]))
 		del all_functions
 		self.tables = tuple(sorted(all_tables.keys(), key=lambda k:all_tables[k]))
@@ -510,4 +599,16 @@ class ProgramDef:
 		del all_memories
 		self.globals = tuple(sorted(all_globals.keys(), key=lambda k:all_globals[k]))
 		del all_globals
+		
+		# TODO: something better than this...
+		# map module-local table elements (function indices) to their program-wide offsets
+		for module in self.modules:
+			for table_index in module.tables:
+				table = self.tables[table_index].table
+				for i, offset in enumerate(table):
+					if offset is not None:
+						table[i] = module.functions[offset]
+
+
+
 	

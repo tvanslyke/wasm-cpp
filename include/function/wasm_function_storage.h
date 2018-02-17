@@ -19,8 +19,7 @@ struct wasm_function_storage;
 
 // constructor
 const struct wasm_function_storage*
-FunctionStorage_New(const opcode_t* code_begin, const opcode_t* code_end, 
-		size_t nparams, size_t nlocals, size_t nreturns, size_t sig);
+FunctionStorage_New(const opcode_t* code_begin, const opcode_t* code_end, size_t sig, size_t nlocals);
 
 // destructor
 void FunctionStorage_Delete(const struct wasm_function_storage* storage);
@@ -30,9 +29,7 @@ void FunctionStorage_Delete(const struct wasm_function_storage* storage);
 const opcode_t* FunctionStorage_Code(const struct wasm_function_storage* storage);
 size_t FunctionStorage_CodeSize(const struct wasm_function_storage* storage);
 size_t FunctionStorage_Signature(const struct wasm_function_storage* storage);
-size_t FunctionStorage_ReturnCount(const struct wasm_function_storage* storage);
 size_t FunctionStorage_LocalsCount(const struct wasm_function_storage* storage);
-size_t FunctionStorage_ParameterCount(const struct wasm_function_storage* storage);
 
 
 

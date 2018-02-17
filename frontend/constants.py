@@ -15,19 +15,19 @@ class LanguageType:
 	
 	@staticmethod
 	def parse_block_type(data):
-		value, count = leb128.read_signed(data, width = 7)
+		value, count = leb128.read_signed(data, 7)
 		assert (not (value in LanguageType.value_types)) or (value == LanguageType.block)
 		return value, count
 	
 	@staticmethod
 	def parse_type(data):
-		value, count = leb128.read_signed(data, width = 7)
+		value, count = leb128.read_signed(data, 7)
 		assert value in LanguageType.types
 		return value, count
 	
 	@staticmethod
 	def parse_value_type(data):
-		value, count = leb128.read_signed(data, width = 7)
+		value, count = leb128.read_signed(data, 7)
 		assert value in LanguageType.value_types
 		return value, count
 

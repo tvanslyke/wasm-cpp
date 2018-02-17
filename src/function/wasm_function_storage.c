@@ -7,9 +7,7 @@ typedef uint_least8_t opcode_t;
 typedef struct wasm_function_storage
 {
 	const size_t code_size;
-	const size_t parameter_count;
 	const size_t signature;
-	const size_t return_count;
 	const size_t locals_count;
 	const opcode_t code[];
 } function_storage_t;
@@ -17,16 +15,13 @@ typedef struct wasm_function_storage
 static const size_t code_offset = offsetof(function_storage_t, code);
 
 const function_storage_t*
-FunctionStorage_New(const opcode_t* code_begin, const opcode_t* code_end, 
-		size_t sig, size_t nparams, size_t nlocals, size_t nreturns)
+FunctionStorage_New(const opcode_t* code_begin, const opcode_t* code_end, size_t sig, size_t nlocals)
 {
 	const size_t code_size = code_end - code_begin;
 	const size_t code_bytes = code_size * sizeof(opcode_t);
 	function_storage_t init = {
 		.code_size = code_size,
-		.parameter_count = nparams,
 		.signature = sig,
-		.return_count = nreturns,
 		.locals_count = nlocals,
 	};
 	void* storage = malloc(sizeof(*storage) + code_bytes);
@@ -60,17 +55,8 @@ size_t FunctionStorage_Signature(const function_storage_t* storage)
 	return storage->signature;
 }
 
-size_t FunctionStorage_ReturnCount(const function_storage_t* storage)
-{
-	return storage->return_count;
-}
 
 size_t FunctionStorage_LocalsCount(const function_storage_t* storage)
 {
 	return storage->locals_count;
-}
-
-size_t FunctionStorage_ParameterCount(const function_storage_t* storage)
-{
-	return storage->parameter_count;
 }

@@ -1,6 +1,9 @@
 import leb128
 import constants as consts
 import opcodes as ops
+from collections import defaultdict
+import struct
+import array
 
 class WasmBinaryParser:
 	
@@ -40,8 +43,8 @@ class WasmBinaryParser:
 		return value
 	
 	def parse_resizable_limits(self):
-		has_maximum = bool(self.parse_unsigned(1))
-		initial_size = parse_unsigned_leb128(32)
+		has_maximum = bool(self.parse_unsigned_leb128(1))
+		initial_size = self.parse_unsigned_leb128(32)
 		maximum = None
 		if has_maximum:
 			maximum = self.parse_unsigned_leb128(32)
@@ -54,6 +57,11 @@ class WasmBinaryParser:
 		value = self.view[:size]
 		self._advance(size)
 		return value
+
+	def parse_array(self, parse_func, size = None):
+		if size is None:
+			size = self.parse_unsigned_leb128(32)
+		return [parse_func(self) for _ in range(size)]
 
 	def parse_memory_type(self):
 		init, maxm = self.parse_resizable_limits()
@@ -74,19 +82,24 @@ class WasmBinaryParser:
 		return (typecode, init, maxm)
 
 	def parse_func_type(self):
-		typecode, count = LanguageType.parse_type(self.view)
-		assert typecode == LanguageType.func
+		typecode, count = consts.LanguageType.parse_type(self.view)
+		assert typecode == consts.LanguageType.func
 		self._advance(count)
-		param_types = self.parse_string()
-		return_types = self.parse_string()
+		parse_fn = lambda parser: parser.parse_signed_leb128(7)
+		param_types = self.parse_array(parse_fn)
+		return_types = self.parse_array(parse_fn)
 		for tp in param_types:
 			assert tp in consts.LanguageType.value_types
 		for tp in return_types:
-			assert tp in consts.LanguageType.value_types
+			if tp not in consts.LanguageType.value_types:
+				raise ValueError("Invalid 'value_type' (typecode={}) encountered "
+					"while parsing function signature.".format(hex(tp)))
+		param_types = struct.pack('{}b'.format(len(param_types)), *param_types)
+		return_types = struct.pack('{}b'.format(len(return_types)), *return_types)
 		return param_types, return_types
 		
 	def parse_global_type(self):
-		content_type = LanguageType.parse_value_type(self.view)
+		content_type = consts.LanguageType.parse_value_type(self.view)
 		mutable = parse_unsigned_leb128(1)
 		return content_type, mutable
 
@@ -111,9 +124,9 @@ class WasmBinaryParser:
 
 	def parse_format(self, struct_format, count = None):
 		if count is None:
-			return self.parser_struct(struct.Struct(format))
+			return self.parse_struct(struct.Struct(struct_format))
 		else:
-			return self.parser_structs(struct.Struct(format), count)
+			return self.parse_structs(struct.Struct(struct_format), count)
 		
 	def parse_initializer_expression(self):
 		count = 0
@@ -134,58 +147,6 @@ class WasmBinaryParser:
 
 class ImmediatesParser:
 	
-	handlers = defaultdict(lambda: ImmediatesParser._default, {
-		ops.Block: 		ImmediatesParser._block, 
-		ops.Loop: 		ImmediatesParser._block, 
-		ops.If: 		ImmediatesParser._block, 
-		ops.End: 		ImmediatesParser._pop_label, 
-		ops.Br: 		ImmediatesParser._index, 
-		ops.Br_if: 		ImmediatesParser._index, 
-		ops.Br_table: 		ImmediatesParser._branch_table, 
-		ops.Call: 		ImmediatesParser._function_index, 
-		ops.Call_indirect: 	ImmediatesParser._call_indirect, 
-		ops.get_local: 		ImmediatesParser._index, 
-		ops.set_local: 		ImmediatesParser._index, 
-		ops.tee_local: 		ImmediatesParser._index, 
-		ops.get_global:		ImmediatesParser._global_index, 
-		ops.set_global:		ImmediatesParser._global_index, 
-
-		ops.I32_load: 		ImmediatesParser._load_store, 
-		ops.I64_load: 		ImmediatesParser._load_store, 
-		ops.F32_load: 		ImmediatesParser._load_store, 
-		ops.F64_load: 		ImmediatesParser._load_store, 
-
-		ops.I32_load: 		ImmediatesParser._load_store, 
-		ops.I32_load: 		ImmediatesParser._load_store, 
-		ops.I32_load: 		ImmediatesParser._load_store, 
-		ops.I32_load: 		ImmediatesParser._load_store, 
-		ops.I32_load:		ImmediatesParser._load_store, 
-		ops.I64_load:		ImmediatesParser._load_store, 
-		ops.F32_load:		ImmediatesParser._load_store, 
-		ops.F64_load:		ImmediatesParser._load_store, 
-		ops.I32_load8_s:	ImmediatesParser._load_store, 
-		ops.I32_load8_u:	ImmediatesParser._load_store, 
-		ops.I32_load16_s:	ImmediatesParser._load_store, 
-		ops.I32_load16_u:	ImmediatesParser._load_store, 
-		ops.I64_load8_s:	ImmediatesParser._load_store, 
-		ops.I64_load8_u:	ImmediatesParser._load_store, 
-		ops.I64_load16_s:	ImmediatesParser._load_store, 
-		ops.I64_load16_u:	ImmediatesParser._load_store, 
-		ops.I64_load32_s:	ImmediatesParser._load_store, 
-		ops.I64_load32_u:	ImmediatesParser._load_store, 
-		ops.I32_store:		ImmediatesParser._load_store, 
-		ops.I64_store:		ImmediatesParser._load_store, 
-		ops.F32_store:		ImmediatesParser._load_store, 
-		ops.F64_store:		ImmediatesParser._load_store, 
-		ops.I32_store8:		ImmediatesParser._load_store, 
-		ops.I32_store16:	ImmediatesParser._load_store, 
-		ops.I64_store8:		ImmediatesParser._load_store, 
-		ops.I64_store16:	ImmediatesParser._load_store, 
-		ops.I64_store32:	ImmediatesParser._load_store, 
-
-		ops.Current_memory:	ImmediatesParser._leb128_uint1,
-		ops.Grow_memory:	ImmediatesParser._leb128_uint1,
-	})
 	wasm_uint64 = struct.Struct('=Q')
 	wasm_sint64 = struct.Struct('=q')
 	wasm_float64 = struct.Struct('=d')
@@ -206,9 +167,9 @@ class ImmediatesParser:
 		module_globals
 	):
 		self.code_src = code
-		self.code_dest = array.array('B', len(code))
+		self.code_dest = array.array('B')
 		self.parser = WasmBinaryParser(self.code_src)
-		self.function_signatures
+		self.function_signatures = module_function_signatures
 		self.functions = module_functions
 		self.tables = module_tables
 		self.memories = module_memories
@@ -219,7 +180,7 @@ class ImmediatesParser:
 		opcode = ops.Nop
 		while not ((opcode == ops.End) and (self.labels == -1)):
 			opcode = self.parser.peek()
-			CodeParser.handlers[opcode](self)
+			ImmediatesParser.handlers[opcode](self)
 		return self.code_dest, self.parser.bytes_consumed
 
 	def _leb128_uint1(self):
@@ -304,10 +265,10 @@ class ImmediatesParser:
 		self._leb128_uint1()
 
 	def _push_label(self):
-		self.labels_count += 1
+		self.labels += 1
 
 	def _pop_label(self):
-		self.labels_count -= 1
+		self.labels -= 1
 
 	def _block(self):
 		self._leb128_sint7()
@@ -335,13 +296,6 @@ class ImmediatesParser:
 
 class CodeParser:
 	
-	handlers = defaultdict((lambda: CodeParser._default_handler), {
-		ops.Block:  CodeParser._block_handler,
-		ops.Loop:  CodeParser._loop_handler,
-		ops.If:  CodeParser._if_handler,
-		ops.Else:  CodeParser._else_handler,
-		ops.End:  CodeParser._end_handler
-	})
 
 	immediates_sizes = defaultdict(int, {
 		ops.Block: 		1, 
@@ -352,11 +306,11 @@ class CodeParser:
 		ops.Br_table: 		-1,
 		ops.Call: 		4, 
 		ops.Call_indirect: 	4, 
-		ops.get_local: 		4, 
-		ops.set_local: 		4, 
-		ops.tee_local: 		4, 
-		ops.get_global:		4, 
-		ops.set_global:		4, 
+		ops.Get_local: 		4, 
+		ops.Set_local: 		4, 
+		ops.Tee_local: 		4, 
+		ops.Get_global:		4, 
+		ops.Set_global:		4, 
 
 		ops.I32_load: 		8, 
 		ops.I64_load: 		8, 
@@ -402,10 +356,11 @@ class CodeParser:
 		self.code = code
 		self.index = 0
 		
-	def finalize(self):
+	def parse(self):
 		while self.index < len(self.code):
 			opcode = self.code[self.index]
 			CodeParser.handlers[opcode](self, opcode)
+		return self.code
 	
 	def _insert_unbound_label(self):
 		self.code[self.index: self.index] = array.array('B', b'\0\0\0\0')
@@ -474,3 +429,65 @@ def finalized_code(code, module):
 	return CodeParser(code).parse(), bytecount
 
 
+ImmediatesParser.handlers = defaultdict(lambda: ImmediatesParser._default, {
+	ops.Block: 		ImmediatesParser._block, 
+	ops.Loop: 		ImmediatesParser._block, 
+	ops.If: 		ImmediatesParser._block, 
+	ops.End: 		ImmediatesParser._pop_label, 
+	ops.Br: 		ImmediatesParser._index, 
+	ops.Br_if: 		ImmediatesParser._index, 
+	ops.Br_table: 		ImmediatesParser._branch_table, 
+	ops.Call: 		ImmediatesParser._function_index, 
+	ops.Call_indirect: 	ImmediatesParser._call_indirect, 
+	ops.Get_local: 		ImmediatesParser._index, 
+	ops.Set_local: 		ImmediatesParser._index, 
+	ops.Tee_local: 		ImmediatesParser._index, 
+	ops.Get_global:		ImmediatesParser._global_index, 
+	ops.Set_global:		ImmediatesParser._global_index, 
+
+	ops.I32_load: 		ImmediatesParser._load_store, 
+	ops.I64_load: 		ImmediatesParser._load_store, 
+	ops.F32_load: 		ImmediatesParser._load_store, 
+	ops.F64_load: 		ImmediatesParser._load_store, 
+
+	ops.I32_load: 		ImmediatesParser._load_store, 
+	ops.I32_load: 		ImmediatesParser._load_store, 
+	ops.I32_load: 		ImmediatesParser._load_store, 
+	ops.I32_load: 		ImmediatesParser._load_store, 
+	ops.I32_load:		ImmediatesParser._load_store, 
+	ops.I64_load:		ImmediatesParser._load_store, 
+	ops.F32_load:		ImmediatesParser._load_store, 
+	ops.F64_load:		ImmediatesParser._load_store, 
+	ops.I32_load8_s:	ImmediatesParser._load_store, 
+	ops.I32_load8_u:	ImmediatesParser._load_store, 
+	ops.I32_load16_s:	ImmediatesParser._load_store, 
+	ops.I32_load16_u:	ImmediatesParser._load_store, 
+	ops.I64_load8_s:	ImmediatesParser._load_store, 
+	ops.I64_load8_u:	ImmediatesParser._load_store, 
+	ops.I64_load16_s:	ImmediatesParser._load_store, 
+	ops.I64_load16_u:	ImmediatesParser._load_store, 
+	ops.I64_load32_s:	ImmediatesParser._load_store, 
+	ops.I64_load32_u:	ImmediatesParser._load_store, 
+	ops.I32_store:		ImmediatesParser._load_store, 
+	ops.I64_store:		ImmediatesParser._load_store, 
+	ops.F32_store:		ImmediatesParser._load_store, 
+	ops.F64_store:		ImmediatesParser._load_store, 
+	ops.I32_store8:		ImmediatesParser._load_store, 
+	ops.I32_store16:	ImmediatesParser._load_store, 
+	ops.I64_store8:		ImmediatesParser._load_store, 
+	ops.I64_store16:	ImmediatesParser._load_store, 
+	ops.I64_store32:	ImmediatesParser._load_store, 
+
+	ops.Current_memory:	ImmediatesParser._leb128_uint1,
+	ops.Grow_memory:	ImmediatesParser._leb128_uint1,
+})
+
+
+
+CodeParser.handlers = defaultdict((lambda: CodeParser._default_handler), {
+	ops.Block:  CodeParser._block_handler,
+	ops.Loop:  CodeParser._loop_handler,
+	ops.If:  CodeParser._if_handler,
+	ops.Else:  CodeParser._else_handler,
+	ops.End:  CodeParser._end_handler
+})

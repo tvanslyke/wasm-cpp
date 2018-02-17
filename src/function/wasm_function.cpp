@@ -1,11 +1,8 @@
 #include "function/wasm_function.h"
 #include "function/wasm_function_storage.h"
 
-wasm_function::wasm_function(const code_string_t& code_str, func_sig_id_t sig, 
-				std::size_t nparams, std::size_t nlocals, std::size_t nreturns):
-	func_storage(FunctionStorage_New(
-		code_str.data(), code_str.data() + code_str.size(),
-		nparams, nlocals, nreturns, sig))
+wasm_function::wasm_function(const opcode_t* code_begin, const opcode_t* code_end, std::size_t sig, std::size_t nlocals)
+	func_storage(FunctionStorage_New(code_begin, code_end, sig, nlocals))
 {
 	if(not func_storage)
 		throw std::bad_alloc();
@@ -26,19 +23,10 @@ func_sig_id_t wasm_function::signature() const
 	return FunctionStorage_Signature(func_storage.get());
 }
 
-std::size_t wasm_function::return_count() const
-{
-	return FunctionStorage_ReturnCount(func_storage.get());
-}
 
 std::size_t wasm_function::locals_count() const
 {
 	return FunctionStorage_LocalsCount(func_storage.get());
-}
-
-std::size_t wasm_function::parameter_count() const
-{
-	return FunctionStorage_ParameterCount(func_storage.get());
 }
 
 void wasm_function::WasmFunctionDeleter::operator()(const void* func_storage) const

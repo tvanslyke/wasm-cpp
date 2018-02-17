@@ -14,7 +14,7 @@ class IdDict(OrderedDict):
 			
 	def __missing__(self, key):
 		sz = len(self)
-		self[key] = sz
+		super(IdDict, self).__setitem__(key, sz)
 		return sz
 
 	def copy(self):
@@ -26,8 +26,22 @@ class IdDict(OrderedDict):
 	def fromkeys(self, *args, **kwargs):
 		return NotImplemented
 	
+	def __delitem__(self, key):
+		return NotImplemented
+	
 	def update(self, keys):
 		for k in keys:
 			self[k]
 	
+	def pop(self, *args, **kwargs):
+		return NotImplemented
+
+	def popitem(self, *args, **kwargs):
+		return NotImplemented
+
+	def setdefault(self, *args, **kwargs):
+		return NotImplemented
+	
+
+
 	
