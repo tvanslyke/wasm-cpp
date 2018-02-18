@@ -1,9 +1,9 @@
 #ifndef WASM_BASE_H
 #define WASM_BASE_H
 
+#include <cstddef>
 #include <cassert>
 #include <cstdint>
-#include <cstddef>
 #include <climits>
 #include <limits>
 

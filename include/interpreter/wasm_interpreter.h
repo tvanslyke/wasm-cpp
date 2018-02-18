@@ -1,5 +1,5 @@
-#ifndef WASM_INTERPRETER_H
-#define WASM_INTERPRETER_H
+#ifndef INTERPRETER_WASM_INTERPRETER_H
+#define INTERPRETER_WASM_INTERPRETER_H
 
 #include "wasm_value.h"
 #include "wasm_instruction.h"
@@ -680,4 +680,4 @@ bool wasm_runtime::eval()
 	return true;
 }
 
-#endif /* WASM_INTERPRETER_H */
+#endif /* INTERPRETER_WASM_INTERPRETER_H */

@@ -1,10 +1,8 @@
 import argparse
-import sys
 from ProgramDef import ProgramDef
 from pathlib import Path
 from collections import defaultdict
 from warnings import warn
-import itertools
 
 class ProgramOptions:
 
@@ -103,12 +101,15 @@ def make_program(parser):
 	return ProgramDef(*modules)
 	
 
-def main():
+def main(argv):
 	parser = make_argument_parser()
-	result = parser.parse_args(sys.argv[1:])
+	result = parser.parse_args()
 	program = make_program(result)
 	program._define_program()
+	return program
 
 
 if __name__ == '__main__':
-	main()
+	from sys import argv
+	main(argv[1:])
+

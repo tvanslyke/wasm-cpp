@@ -30,12 +30,12 @@ typedef union wasm_value_
 } /* extern "C" */
 
 // pointers-to-members for abstraction over member access
-extern wasm_uint32_t  wasm_value_t::* const u_32;
-extern wasm_uint64_t  wasm_value_t::* const u_64;
-extern wasm_sint32_t  wasm_value_t::* const s_32;
-extern wasm_sint64_t  wasm_value_t::* const s_64;
-extern wasm_float32_t wasm_value_t::* const f_32;
-extern wasm_float64_t wasm_value_t::* const f_64;
+inline wasm_uint32_t  wasm_value_t::* const u_32 = &wasm_value_t::u32;
+inline wasm_uint64_t  wasm_value_t::* const u_64 = &wasm_value_t::u64;
+inline wasm_sint32_t  wasm_value_t::* const s_32 = &wasm_value_t::s32;
+inline wasm_sint64_t  wasm_value_t::* const s_64 = &wasm_value_t::s64;
+inline wasm_float32_t wasm_value_t::* const f_32 = &wasm_value_t::f32;
+inline wasm_float64_t wasm_value_t::* const f_64 = &wasm_value_t::f64;
 
 # endif /* __cplusplus */
 #endif /* WASM_VALUE_H */

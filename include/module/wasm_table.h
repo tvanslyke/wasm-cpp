@@ -1,10 +1,10 @@
 #ifndef MODULE_WASM_TABLE_H
 #define MODULE_WASM_TABLE_H
 
+#include <cstddef>
 #include "wasm_base.h"
 #include "wasm_value.h"
 #include "function/wasm_function.h"
-
 
 struct wasm_table
 {

@@ -2,6 +2,9 @@
 #define INTERPRETER_WASM_CONTROL_FLOW_STACK_H
 
 #include "wasm_base.h"
+#include "wasm_instruction.h"
+#include <vector>
+#include <cstddef>
 
 class wasm_control_flow_stack 
 {

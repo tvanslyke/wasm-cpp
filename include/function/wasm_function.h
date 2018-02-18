@@ -1,5 +1,5 @@
-#ifndef WASM_FUNCTION_H
-#define WASM_FUNCTION_H
+#ifndef FUNCTION_WASM_FUNCTION_H
+#define FUNCTION_WASM_FUNCTION_H
 
 #include "wasm_base.h"
 #include "wasm_instruction.h"
@@ -15,7 +15,7 @@ struct wasm_function
 	wasm_function(const opcode_t* code_begin, const opcode_t* code_end, std::size_t sig, std::size_t nparams);
 	const opcode_t* code() const;
 	std::size_t code_size() const;
-	func_sig_id_t signature() const;
+	std::size_t signature() const;
 	std::size_t locals_count() const;
 private:
 	struct WasmFunctionDeleter {
@@ -29,4 +29,4 @@ private:
 };
 
 
-#endif /* WASM_FUNCTION_H */
+#endif /* FUNCTION_WASM_FUNCTION_H */

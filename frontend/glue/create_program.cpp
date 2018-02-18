@@ -241,7 +241,7 @@ static std::size_t read_start_function(PyObject* program_def)
 	return index;
 }
 
-wasm_program_state read_program_def(PyObject* program_def)
+static wasm_program_state read_program_def(PyObject* program_def)
 {
 	auto funtions = read_functions(program_def);
 	auto tables = read_tables(program_def);
@@ -256,5 +256,43 @@ wasm_program_state read_program_def(PyObject* program_def)
 		std::move(mutabilities),
 		start_fn
 	);
+}
+
+
+
+wasm_program_state create_program(int argc, const char** argv)
+{
+	assert(argc > 0);
+	struct PyRuntimeScopeGuard { 
+	
+		PyRuntimeScopeGuard() 
+		{ Py_InitializeEx(0); }
+		
+		~PyRuntimeScopeGuard() 
+		{ Py_Finalize(); }
+	};
+	PyRuntimeScopeGuard py_runtime;
+	PythonObject program_args = PyTuple_New(argc - 1);
+	if(not program_args)
+		propagate_python_exception();
+	PythonObject arg_string;
+	for(Py_ssize_t i = 0; i < (argc - 1); ++i)
+	{
+		arg_string = PyUnicode_FromString(argv[i + 1]);
+		if(not arg_string)
+			propagate_python_exception();
+		PyTuple_SET_ITEM(program_args, arg_string.release());
+	}
+	// TODO: initialize modules here
+	PythonObject pymain_module = PyImport_ImportModule("wasm_cpp_pymain");
+	if(not pymain_module)
+		propagate_python_exception();
+	PythonObject pymain_main_function = PyObject_GetAttrString(pymain_module, "main");
+	if(not pymain_main_function)
+		propagate_python_exception();
+	PythonObject program_def = PyObject_CallFunction(pymain_main_function, "O", program_args);
+	if(not program_def)
+		propagate_python_exception();
+	return read_program_def(program_def);
 }
 
