@@ -2,6 +2,8 @@
 #define MODULE_WASM_TABLE_H
 
 #include <cstddef>
+#include <vector>
+#include <optional>
 #include "wasm_base.h"
 #include "wasm_value.h"
 #include "function/wasm_function.h"

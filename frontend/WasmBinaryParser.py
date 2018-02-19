@@ -155,7 +155,7 @@ class ImmediatesParser:
 	wasm_float32 = struct.Struct('=f')
 	wasm_ubyte = struct.Struct('=b')
 	wasm_sbyte = struct.Struct('=B')
-	wasm_bool = struct.Struct('=?')
+	wasm_bool = wasm_sbyte
 
 	def __init__(
 		self, 
@@ -166,6 +166,7 @@ class ImmediatesParser:
 		module_memories, 
 		module_globals
 	):
+		assert code[-1] == ops.End
 		self.code_src = code
 		self.code_dest = array.array('B')
 		self.parser = WasmBinaryParser(self.code_src)
@@ -178,9 +179,12 @@ class ImmediatesParser:
 
 	def parse(self):
 		opcode = ops.Nop
-		while not ((opcode == ops.End) and (self.labels == -1)):
-			opcode = self.parser.peek()
+		while self.parser.bytes_remaining > 0:#not ((opcode == ops.End) and (self.labels == -1)):
+			opcode = self.parser.parse_byte()
+			self.code_dest.append(opcode)
 			ImmediatesParser.handlers[opcode](self)
+			
+		assert self.code_dest[-1] == ops.End
 		return self.code_dest, self.parser.bytes_consumed
 
 	def _leb128_uint1(self):
@@ -290,7 +294,7 @@ class ImmediatesParser:
 		self._leb128_uint32()
 
 	def _default(self):
-		self.code_dest.append(self.parser.parse_byte())
+		pass
 	
 
 
@@ -354,12 +358,17 @@ class CodeParser:
 	def __init__(self, code):
 		self.label_stack = []
 		self.code = code
+		assert self.code[-1] == ops.End
 		self.index = 0
 		
 	def parse(self):
 		while self.index < len(self.code):
 			opcode = self.code[self.index]
-			CodeParser.handlers[opcode](self, opcode)
+			try:
+				CodeParser.handlers[opcode](self, opcode)
+			except IndexError:
+				assert len(self.code) - 1 ==  self.index
+				break
 		return self.code
 	
 	def _insert_unbound_label(self):

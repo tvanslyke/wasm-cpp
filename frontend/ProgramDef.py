@@ -3,7 +3,8 @@ from WasmBinaryParser import WasmBinaryParser, finalized_code
 from IdDict import IdDict
 from collections import defaultdict, namedtuple
 import constants as consts
-import array as array
+import array
+import struct
 
 class ResizableLimits:
 	
@@ -47,8 +48,11 @@ class Function(Importable):
 
 	class Type:
 		
-		def __init__(self, signature_id):
+		def __init__(self, signature_id, parameter_count, return_count):
 			self._signature = signature_id
+			self._parameter_count = parameter_count
+			self._return_count = return_count
+			
 		
 		def __eq__(self, other):
 			return (isinstance(other, Function.Type) 
@@ -57,6 +61,14 @@ class Function(Importable):
 		@property
 		def signature(self):
 			return self._signature
+	
+		@property
+		def parameter_count(self):
+			return self._parameter_count
+	
+		@property
+		def return_count(self):
+			return self._return_count
 	
 		@property
 		def kind(self):
@@ -75,12 +87,15 @@ class Function(Importable):
 	def define(self, locals_types, code):
 		assert self.locals_types is None
 		assert self.code is None
+		assert code
+		assert code[-1] == consts.Opcode.END
 		self.locals_types = bytes(bytearray(locals_types))
 		self.code = bytes(code)
 
 	def serialize(self):
-		fmt = "=L=L{}s".format(len(self.code))
-		return struct.pack(self.type.signature, len(self.locals_types), self.code)
+		fmt = "=LLLL{}s".format(len(self.code))
+		return struct.pack(fmt, self.type.signature, len(self.locals_types), 
+			self.type.parameter_count, self.type.return_count, self.code)
 		
 
 class Table(Importable):
@@ -161,7 +176,7 @@ class Memory(Importable):
 		maxm_size = self.type.maximum_size
 		if maxm_size is None:
 			maxm_size = -1
-		return struct.pack(self.type.initial_size, maxm_size, len(self.memory), self.memory)
+		return struct.pack(fmt, maxm_size, self.memory)
 
 
 class Global(Importable):
@@ -251,7 +266,7 @@ class Global(Importable):
 		-0x01: b'd',
 	}	
 	def serialize(self):
-		fmt = b"=?=c={}"
+		fmt = b"=Bc{}"
 		fmt_chr = Global._typecode_map[self.type.typecode]
 		if isinstance(fmt_chr, tuple):
 			assert isinstance(self.initial_value, int)
@@ -263,6 +278,7 @@ class Global(Importable):
 			assert isinstance(self.initial_value, float)
 		
 		fmt.format(fmt_chr)
+		print("HERE")
 		return struct.pack(self.type.mutable, fmt_chr, self.initial_value)
 
 
@@ -271,7 +287,7 @@ class Module:
 	def __init__(self, module_def, program_def):
 		self.module_def = module_def
 		self._program_def = program_def
-		self.function_signatures = None
+		self.function_signatures = tuple()
 		self.functions = [] 
 		self.tables = []
 		self.memories = []
@@ -354,11 +370,11 @@ class ProgramDef:
 		self.modules = tuple(Module(module_def, self) for module_def in self.modules)
 		self.module_names = {module.name for module in self.modules}
 		self.function_signatures = IdDict()
+		self.signature_id_map = []
 		self.exports = defaultdict(lambda: defaultdict(None))
 		self.imports = self.exports
 		self.global_variables = []
 		self.start_function = None
-		self.id_maps = ProgramDef.IdMapTuple(IdDict(), IdDict(), IdDict(), IdDict())
 
 
 	@property 
@@ -396,15 +412,22 @@ class ProgramDef:
 		else:
 			return WasmBinaryParser(data)
 
+	def _get_function_signature(self, sig_strings):
+		index = self.function_signatures[sig_strings]
+		if index >= len(self.signature_id_map):
+			assert index == len(self.signature_id_map)
+			self.signature_id_map.append((len(sig_strings[0]), len(sig_strings[1])))
+		return index
+	
 	def _read_type_section(self, module):
-		assert (module.function_signatures is None)
+		assert len(module.function_signatures) == 0
 		parser = self._get_section_parser(module, "Type")
 		if parser is not None:
 			count = parser.parse_unsigned_leb128(32)
 			get_sig = lambda: self.function_signatures[parser.parse_func_type()]
-			module.function_signatures = tuple(get_sig() for _ in range(count))
-		else:
-			module.function_signatures = tuple()
+			module.function_signatures = tuple(
+				self._get_function_signature(parser.parse_func_type()) for _ in range(count)
+			)
 
 	def _read_import_section(self, module):
 		parser = self._get_section_parser(module, "Import")
@@ -446,9 +469,10 @@ class ProgramDef:
 		assert module.function_import_count == len(module.functions)
 		funcs = module.functions
 		sigs = module.function_signatures
+		get_sig = lambda id_num: (id_num,) +  self.signature_id_map[module.function_signatures[id_num]]
 		sz = len(funcs)
 		# extend functions list
-		make_func = lambda: Function(Function.Type(sigs[parser.parse_unsigned_leb128(32)]))
+		make_func = lambda: Function(Function.Type(*get_sig(parser.parse_unsigned_leb128(32))))
 		funcs[sz:sz + count] = (make_func() for _ in range(count))
 	
 	def _read_table_section(self, module):

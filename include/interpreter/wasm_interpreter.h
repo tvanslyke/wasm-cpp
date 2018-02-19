@@ -36,13 +36,15 @@ struct wasm_runtime
 			return ss.str();
 		}
 	};
-	wasm_runtime(wasm_program_state& ps, wasm_call_stack& cs, wasm_control_flow_stack& cfs, wasm_value_t* sp):
-		program_state(ps),
-		call_stack(cs),
-		control_flow_stack(cfs),
-		stack_pointer(sp)
+	wasm_runtime(wasm_program_state& state, wasm_call_stack& calls, wasm_control_flow_stack& control_flow, wasm_value_t* stack):
+		program_state(state),
+		call_stack(calls),
+		control_flow_stack(control_flow),
+		stack_pointer(stack)
 	{
-		
+		assert(program_state.start_function.return_count() == 0);
+		call_stack.push_frame(program_state.start_function);
+		control_flow_stack.push_function(sp(), 0);
 	}
 
 	wasm_program_state& program_state;
@@ -59,6 +61,7 @@ struct wasm_runtime
 	template <class ImmediateType>
 	ImmediateType get_immediate()
 	{
+		assert(pc());
 		ImmediateType dest;
 		const auto* instrs = pc();
 		std::memcpy(&dest, instrs, sizeof(dest));
@@ -70,6 +73,7 @@ struct wasm_runtime
 	template <class ImmediateType>
 	void skip_immediates(std::size_t count)
 	{
+		assert(pc());
 		auto jump_pos = opcode_skip_immediates<ImmediateType>(pc(), count);
 		call_stack.code_jump(jump_pos);
 	}
@@ -211,22 +215,28 @@ struct wasm_runtime
 		branch_top();
 	}
 	
-	void end_op()
+	bool end_op()
 	{
-		pop_cf_frame();
+		auto [stack_ptr, label, arity] = pop_cf_frame();
+		if(not label) // end of a function
+		{
+			return_with_arity(stack_ptr, arity);
+			assert(arity == 0);
+			call_stack.fast_pop_frame();
+			return call_stack.code() == nullptr;
+		}
+		return false;
 	}
 	
-	bool return_op()
+	void return_op()
 	{
 		call_stack.fast_pop_frame();
 		// sentinal stack frame at the bottom has NULL program counter to 
 		// indicate program completion.
-		if(not pc())
-			return true;
-		auto [stack_ptr, ret_label_sentinal, arity] = pop_cf_frame();
+		assert(pc());
+		auto [stack_ptr, ret_label_sentinal, arity] = control_flow_stack.pop_function();
 		assert(ret_label_sentinal == nullptr);
 		return_with_arity(stack_ptr, arity);
-		return false;
 	}
 
 	// parametric instructions
@@ -260,6 +270,7 @@ struct wasm_runtime
 
 	void push_frame(const wasm_function& func)
 	{
+		control_flow_stack.push_function(sp(), func.return_count());
 		call_stack.push_frame(func);
 	}
 
@@ -267,14 +278,14 @@ struct wasm_runtime
 	{
 		wasm_uint32_t idx = get_immediate<wasm_uint32_t>();
 		const auto& func = program_state.function_at(idx);
-		call_stack.push_frame(func);
+		push_frame(func);
 	}
 	
 	void call_indirect()
 	{
 		wasm_uint32_t idx = get_immediate<wasm_uint32_t>();
 		const auto& func = program_state.table_function_at(idx);
-		call_stack.push_frame(func);
+		push_frame(func);
 	}
 
 	void select()
@@ -446,7 +457,8 @@ struct wasm_runtime
 
 	opcode_t fetch_opcode_incr() 
 	{
-		auto oc = *call_stack.code();
+		assert(call_stack.code());
+		auto oc = *(call_stack.code());
 		call_stack.code_next();
 		return oc;
 	}
@@ -469,15 +481,14 @@ bool wasm_runtime::eval()
 	case BR_TABLE:			br_table_op(); 			break;
 	case IF:			if_op(); 			break;
 	case ELSE:			else_op(); 			break;
-	case END:			end_op(); 			break;
-
-	// special case; 
-	// return_op() indicates if the program is complete
-	case RETURN:			
-		if(return_op())
+	
+	// special case:
+	// end_op() indicates if the program is complete
+	case END:
+		if(end_op())
 			return false;
 		break;
-
+	case RETURN:			return_op();			break;
 	case UNREACHABLE:		trap("Unreachable.");		break;
 	
 	// BASIC INSTRUCTIONS

@@ -16,7 +16,7 @@ struct wasm_linear_memory
 	
 	wasm_linear_memory(std::vector<wasm_byte_t>&& mem, std::optional<std::size_t> maxm): 
 		memory(mem), maximum_size(maxm.has_value() ? maxm.value() : (memory.max_size() / page_size))
-	{	
+	{
 		if(maxm.has_value() and (maxm.value() < (memory.capacity() / page_size)))
 		{
 			try

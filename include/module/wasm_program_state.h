@@ -12,8 +12,8 @@ struct wasm_program_state
 {
 	wasm_program_state(
 		std::vector<wasm_function>&& functions_,
-		std::vector<wasm_linear_memory>&& memories_,
 		std::vector<wasm_table>&& tables_,
+		std::vector<wasm_linear_memory>&& memories_,
 		std::vector<wasm_value_t>&& globals_,
 		std::vector<bool>&& global_mutabilities_,
 		std::size_t start_function_
@@ -31,6 +31,7 @@ struct wasm_program_state
 	const wasm_value_t& const_global_at(std::size_t index) const;
 	const wasm_value_t& global_at(std::size_t index) const;
 	wasm_value_t& global_at(std::size_t index);
+
 private:
 	static std::vector<wasm_function> init_functions(wasm_program_def& program_def);
 	static std::vector<wasm_linear_memory> init_memories(wasm_program_def& program_def);
@@ -44,7 +45,8 @@ private:
 	const std::vector<wasm_table> tables;
 	std::vector<wasm_value_t> globals;
 	const std::vector<bool> global_mutabilities;
-	const wasm_function* start_function;
+public:
+	const wasm_function& start_function;
 };
 
 #endif /* MODULE_WASM_MODULE_H */

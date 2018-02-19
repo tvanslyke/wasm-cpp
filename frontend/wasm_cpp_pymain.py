@@ -103,7 +103,7 @@ def make_program(parser):
 
 def main(argv):
 	parser = make_argument_parser()
-	result = parser.parse_args()
+	result = parser.parse_args(argv)
 	program = make_program(result)
 	program._define_program()
 	return program

@@ -12,6 +12,9 @@ int main(int argc, const char* argv[])
 	wasm_control_flow_stack control_flow_stack(control_flow_stack_size);
 	std::vector<wasm_value_t> value_stack(value_stack_size, wasm_value_t{wasm_uint64_t(0)});
 	wasm_runtime interpreter(program, call_stack, control_flow_stack, value_stack.data());
-
+	while(interpreter.eval())
+	{
+		/* LOOP */
+	}
 	return 0;
 }
