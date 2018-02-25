@@ -1,5 +1,5 @@
 import leb128
-import opcodes
+import enum
 
 
 class LanguageType:
@@ -62,8 +62,7 @@ class InitExpr:
 	f64_const = 0x44
 	end = 0x0b
 
-
-class Opcode:
+class Opcode(enum.IntEnum):
 
 	BLOCK			= 0x02 
 	LOOP			= 0x03

@@ -6,6 +6,7 @@
 #include "interpreter/wasm_call_stack.h"
 #include "interpreter/wasm_control_flow_stack.h"
 #include "interpreter/functional_ex.h"
+#include "interpreter/WasmProgramStack.h"
 #include "module/wasm_program_state.h"
 #include "wasm_instruction.h"
 #include "utilities/bit_cast.h"
@@ -13,61 +14,32 @@
 #include <cmath>
 #include <sstream>
 
+
+
 struct wasm_runtime
 {
 	using opcode_t = wasm_opcode::wasm_opcode_t;
-	struct trap_error: public std::runtime_error {
-		template <class String>
-		trap_error(const String& string):
-			std::runtime_error(string)
-		{
-			
-		}
-		trap_error(opcode_t op):
-			std::runtime_error(opcode_message(op))
-		{
-			
-		}
-		
-		static std::string opcode_message(opcode_t op)
-		{
-			std::stringstream ss;
-			ss << "Trap occurred while evaluating instruction " << std::hex << op << ".";
-			return ss.str();
-		}
-	};
-	wasm_runtime(wasm_program_state& state, wasm_call_stack& calls, wasm_control_flow_stack& control_flow, wasm_value_t* stack):
+	
+	wasm_runtime(wasm_program_state& state, WasmProgramStack& stack):
 		program_state(state),
-		call_stack(calls),
-		control_flow_stack(control_flow),
-		stack_pointer(stack)
+		call_stack(stack)
 	{
 		assert(program_state.start_function.return_count() == 0);
-		call_stack.push_frame(program_state.start_function);
-		control_flow_stack.push_function(sp(), 0);
+		call_stack.call_op(program_state.start_function);
+		assert(call_stack.frame_count() == 1);
 	}
 
 	wasm_program_state& program_state;
-	wasm_call_stack& call_stack;
-	wasm_control_flow_stack& control_flow_stack;
-	wasm_value_t* stack_pointer;
+	WasmProgramStack& call_stack;
 
 	// Frame stuff
-	wasm_value_t*& sp(){ return stack_pointer; }
-	const opcode_t* pc(){ return call_stack.code(); }
-	wasm_value_t* locals() { return call_stack.locals(); }
+	const opcode_t* pc(){ return call_stack.program_counter(); }
 	
 	// module stuff
 	template <class ImmediateType>
 	ImmediateType get_immediate()
 	{
-		assert(pc());
-		ImmediateType dest;
-		const auto* instrs = pc();
-		std::memcpy(&dest, instrs, sizeof(dest));
-		auto jump_pos = instrs + opcode_width_of<ImmediateType>();
-		call_stack.code_jump(jump_pos);
-		return dest;
+		return call_stack.read_immediate<ImmediateType>();
 	}
 
 	template <class ImmediateType>
@@ -78,17 +50,11 @@ struct wasm_runtime
 		call_stack.code_jump(jump_pos);
 	}
 
-
 	bool eval();
+
 	void trap(const std::string& message)
-	{
-		throw trap_error(message);
-	}
-	void trap()
-	{
-		throw trap_error(call_stack.code()[-1]);
-	}
-	void trapif(bool b){ if(b) trap(); }
+	{ throw trap_error(message); }
+
 	
 	void trap_bad_memory_access(std::size_t address, std::size_t offset) 
 	{
@@ -110,82 +76,42 @@ struct wasm_runtime
 		trap(message.str());
 	}
 
-	void push() { ++sp(); }
 
-	void push(wasm_value_t v) { *sp()++ = v; }
-	
-	wasm_value_t pop() { return *(--sp()); }
+	void push(wasm_value_t v) { call_stack.push_value(v); }
 
-	wasm_value_t top(std::size_t i = 0) { return *(sp() - std::ptrdiff_t(1 + i)); }
-
-	void push_cf_frame(const opcode_t* lbl, std::size_t arity)
+	template <class T>	
+	void push(T wasm_value_t::* member, wasm_value_t v) 
 	{
-		control_flow_stack.push_frame(sp(), lbl, arity);
-	}
-
-	void push_cf_frame_immediate_sig(const opcode_t* lbl)
-	{
-		auto sig = get_immediate<wasm_sint8_t>();
-		push_cf_frame(lbl, sig != decltype(sig)(wasm_language_type::block));
+		wasm_value_t value;
+		value.*member = v.*member;
+		call_stack.push_value(value);
 	}
 	
-	void push_cf_frame_lookahead(std::size_t arity)
-	{
-		push_cf_frame(pc() + get_immediate<wasm_uint32_t>(), arity);
-	}
-	void push_cf_frame_lookahead_immediate_sig()
-	{
-		auto sig = get_immediate<wasm_sint8_t>();
-		auto label = pc() + get_immediate<wasm_uint32_t>();
-		push_cf_frame(label, sig != decltype(sig)(wasm_language_type::block));
-	}
-
-	auto pop_cf_frame()
-	{
-		return control_flow_stack.pop_frame();
-	}
+	wasm_value_t pop() { return call_stack.pop_value(); }
 
 	/* INSTRUCTIONS */
 
 	// control flow
-
 	void block_op()
 	{
-		push_cf_frame_lookahead_immediate_sig();
+		call_stack.block_op(get_immediate<signed char>(), call_stack.read_label_immediate());
 	}
 
 	void loop_op()
 	{
-		push_cf_frame_immediate_sig(pc());
+		call_stack.loop_op();
 	}
 	
-	void return_with_arity(wasm_value_t* return_pos, std::size_t return_arity)
-	{
-		sp() = std::copy(sp() - return_arity, sp(), return_pos);
-	}
-	void branch(std::size_t depth)
-	{
-		auto [stack_ptr, label, arity] = control_flow_stack.jump_index(depth);
-		return_with_arity(stack_ptr, arity);
-		call_stack.code_jump(label);
-	}
-	
-	void branch_top()
-	{
-		auto [stack_ptr, label, arity] = control_flow_stack.jump_top();
-		return_with_arity(stack_ptr, arity);
-		call_stack.code_jump(label);
-	}
 
 	void br_op()
 	{
-		branch(get_immediate<wasm_uint32_t>());
+		call_stack.br_op(get_immediate<wasm_uint32_t>());
 	}
 	
 	void br_if_op()
 	{
-		if(pop().u32)
-			br_op();
+		auto depth = get_immediate<wasm_uint32_t>();
+		call_stack.br_if_op(depth);
 	}
 	
 	void br_table_op()
@@ -194,106 +120,82 @@ struct wasm_runtime
 		std::size_t idx = pop().u32;
 		if(idx < sz) // default branch
 			idx = sz;
-		// go to the selected branch and branch to the stored depth
-		skip_immediates<wasm_uint32_t>(idx);
-		idx = get_immediate<wasm_uint32_t>();
-		branch(idx);
+		auto branch_depth = call_stack.immediate_array_at<wasm_uint32_t>(idx);
+		call_stack.br_op(branch_depth);
 	}
 	
 	void if_op()
 	{
-		push_cf_frame_lookahead_immediate_sig();
+		auto cond = pop().u32;
+		block_op();
+		if(not cond)
+			call_stack.br_op(0);
 	}
 	
 	void else_op()
 	{
-		[[maybe_unused]]
-		auto [stack_ptr, label, arity] = pop_cf_frame();
-		(void)stack_ptr;
-		(void)label;
-		push_cf_frame_lookahead(arity);
-		branch_top();
+		call_stack.else_op(call_stack.read_label_immediate());
 	}
 	
 	bool end_op()
 	{
-		auto [stack_ptr, label, arity] = pop_cf_frame();
-		if(not label) // end of a function
-		{
-			return_with_arity(stack_ptr, arity);
-			assert(arity == 0);
-			call_stack.fast_pop_frame();
-			return call_stack.code() == nullptr;
-		}
-		return false;
+		return call_stack.end_op();
 	}
 	
 	void return_op()
 	{
-		call_stack.fast_pop_frame();
-		// sentinal stack frame at the bottom has NULL program counter to 
-		// indicate program completion.
-		assert(pc());
-		auto [stack_ptr, ret_label_sentinal, arity] = control_flow_stack.pop_function();
-		assert(ret_label_sentinal == nullptr);
-		return_with_arity(stack_ptr, arity);
+		call_stack.return_op();
 	}
 
 	// parametric instructions
-	void get_local()
-	{
-		auto idx = get_immediate<wasm_uint32_t>();
-		*sp()++ = locals()[idx];
-	}
-	void tee_local()
-	{
-		auto idx = get_immediate<wasm_uint32_t>();
-		locals()[idx] = *sp();
-	}
-	void set_local()
-	{
-		tee_local();
-		pop();
-	}
+	void get_local_op()
+	{ call_stack.get_local_op(call_stack.read_immediate<wasm_uint32_t>()); }
 
-	void get_global()
+	void set_local_op()
+	{ call_stack.set_local_op(call_stack.read_immediate<wasm_uint32_t>()); }
+
+	void tee_local_op()
+	{ call_stack.tee_local_op(call_stack.read_immediate<wasm_uint32_t>()); }
+
+
+	void get_global_op()
 	{
+		// TODO: store member-pointer with globals 
 		wasm_uint32_t idx = get_immediate<wasm_uint32_t>();
-		push(program_state.const_global_at(idx));
+		call_stack.push_value(program_state.const_global_at(idx));
 	}
 	
-	void set_global()
+	void set_global_op()
 	{
 		wasm_uint32_t idx = get_immediate<wasm_uint32_t>();
 		program_state.global_at(idx) = pop();
 	}
 
-	void push_frame(const wasm_function& func)
-	{
-		control_flow_stack.push_function(sp(), func.return_count());
-		call_stack.push_frame(func);
-	}
 
-	void call()
+	void call_op()
 	{
 		wasm_uint32_t idx = get_immediate<wasm_uint32_t>();
 		const auto& func = program_state.function_at(idx);
-		push_frame(func);
+		call_stack.call_op(func);
 	}
 	
-	void call_indirect()
+	void call_indirect_op()
 	{
 		wasm_uint32_t idx = get_immediate<wasm_uint32_t>();
-		const auto& func = program_state.table_function_at(idx);
-		push_frame(func);
+		std::size_t func_idx = program_state.table_function_index(idx);
+		const auto& func = program_state.function_at(func_idx);
+		call_stack.call_op(func);
 	}
 
-	void select()
+	void select_op()
 	{
 		wasm_uint32_t pred = pop().u32;
 		wasm_value_t other = pop();
-		if(pred)
-			*sp() = other;
+		if(not pred)
+		{
+			pop();
+			push(other);
+		}
 	}
 
 	template <class T>
@@ -302,9 +204,10 @@ struct wasm_runtime
 		[[maybe_unused]] auto alignment_hint = get_immediate<wasm_ptr_t>();
 		auto offset = get_immediate<wasm_uint32_t>();
 		auto address = pop().u32;
-		if(not (program_state.const_memory_at(0).load(address, offset, *sp(), member)))
+		wasm_value_t value;
+		if(not (program_state.const_memory_at(0).load(address, offset, value, member)))
 			trap_bad_memory_access(address, offset);
-		push();
+		push(value);
 	}
 
 	template <std::size_t Sz, class T>
@@ -313,9 +216,10 @@ struct wasm_runtime
 		[[maybe_unused]] auto alignment_hint = get_immediate<wasm_ptr_t>();
 		auto offset = get_immediate<wasm_uint32_t>();
 		auto address = pop().u32;
-		if(not (program_state.const_memory_at(0).narrow_load<Sz>(address, offset, *sp(), member)))
+		wasm_value_t value;
+		if(not (program_state.const_memory_at(0).narrow_load<Sz>(address, offset, value, member)))
 			trap_bad_memory_access(address, offset);
-		push();
+		push(value);
 	}
 
 	template <class T>
@@ -343,20 +247,24 @@ struct wasm_runtime
 	void grow_memory()
 	{
 		auto v = pop().u32;
-		sp()->s32 = program_state.memory_at(0).grow_memory(v);
-		push();
+		wasm_value_t value;
+		value.s32 = program_state.memory_at(0).grow_memory(v);
+		push(s_32, value);
 	}
 
 	void current_memory() 
 	{
-		sp()->u32 = program_state.memory_at(0).current_memory();
-		push();
+		wasm_value_t value;
+		value.u32 = program_state.memory_at(0).current_memory();
+		push(u_32, value);
 	}
 
 	template <class T>
 	void push_immediate(T wasm_value_t::* member)
 	{
-		(sp()++)->*member = get_immediate<T>();
+		wasm_value_t value;
+		value.*member = get_immediate<T>();
+		push(value);
 	}
 
 
@@ -364,13 +272,19 @@ struct wasm_runtime
 	template <class T, class U>
 	void binop(T op, U wasm_value_t::* member)
 	{
-		auto tmp = pop();
-		*sp().*member = op(top().*member, tmp.*member);
+		auto second = pop().*member;
+		auto first = pop().*member;
+		wasm_value_t result;
+		result.*member = op(first, second);
+		push(result);
 	}
+
 	template <class T, class U>
 	void unop(T op, U wasm_value_t::* member)
 	{
-		*sp().*member = op(top().*member);
+		auto value = pop();
+		value.*member = op(value.*member);
+		push(value);
 	}
 
 	template <class T>
@@ -385,9 +299,9 @@ struct wasm_runtime
 	template <class T>
 	void mul_op(T wasm_value_t::* m){ binop(std::multiplies<>{}, m); }
 	template <class T>
-	void div_op(T wasm_value_t::* m){ binop(std::divides<>{}, m); }
+	void div_op(T wasm_value_t::* m){ binop(wasm_divide<>{}, m); }
 	template <class T>
-	void rem_op(T wasm_value_t::* m){ binop(std::modulus<>{}, m); }
+	void rem_op(T wasm_value_t::* m){ binop(wasm_modulus<>{}, m); }
 	
 	template <class T>
 	void and_op(T wasm_value_t::* m){ binop(std::bit_and<>{}, m); }
@@ -448,19 +362,36 @@ struct wasm_runtime
 	void neg_op(T wasm_value_t::* m){ unop(std::negate<>{}, m); }
 	
 	template <class T, class U>
+	void trunc_int_op(T wasm_value_t::* m_int, U wasm_value_t::* m_float){ 
+		static_assert(std::is_floating_point_v<U>);
+		static_assert(std::is_integral_v<T>);
+		wasm_trunc<T, U> trunc;
+		wasm_value_t result;
+		result.*m_int = trunc(pop().*m_float);
+		push(result);
+	}
+	
+	template <class T, class U>
 	void convert_op(T wasm_value_t::* m_from, U wasm_value_t::* m_to)
-	{ sp()->*m_to = top().*m_from; }
+	{
+		auto value = pop();
+		wasm_value_t result;
+		result.*m_to = value.*m_from;
+		push(result);
+	}
 	
 	template <class T, class U>
 	void reinterpret_op(T wasm_value_t::* m_from, U wasm_value_t::* m_to)
-	{ sp()->*m_to = bit_cast<U>(top().*m_from); }
+	{
+		auto value = pop();
+		wasm_value_t result;
+		result.*m_to = bit_cast<U>(value.*m_from);
+		push(result);
+	}
 
 	opcode_t fetch_opcode_incr() 
 	{
-		assert(call_stack.code());
-		auto oc = *(call_stack.code());
-		call_stack.code_next();
-		return oc;
+		return call_stack.next_opcode();
 	}
 };
 
@@ -469,8 +400,11 @@ struct wasm_runtime
 
 bool wasm_runtime::eval()
 {
+	// TODO: implement compile-time switch for computed goto with GCC
 	using namespace wasm_opcode;
-	switch(fetch_opcode_incr())
+	bool done = false;
+	auto opcode = fetch_opcode_incr();
+	switch(opcode)
 	{
 
 	// BLOCK INSTRUCTIONS
@@ -484,10 +418,7 @@ bool wasm_runtime::eval()
 	
 	// special case:
 	// end_op() indicates if the program is complete
-	case END:
-		if(end_op())
-			return false;
-		break;
+	case END:			done = not end_op(); 		break;
 	case RETURN:			return_op();			break;
 	case UNREACHABLE:		trap("Unreachable.");		break;
 	
@@ -498,14 +429,14 @@ bool wasm_runtime::eval()
 	case I64_CONST: 		push_immediate(u_64);		break;
 	case F32_CONST: 		push_immediate(f_32);		break;
 	case F64_CONST: 		push_immediate(f_64);		break;
-	case GET_LOCAL: 		get_local();			break;
-	case SET_LOCAL: 		set_local();			break;
-	case TEE_LOCAL: 		tee_local();			break;
-	case GET_GLOBAL: 		get_global();			break;
-	case SET_GLOBAL: 		set_global();			break;
-	case SELECT: 			select();			break;
-	case CALL: 			call();				break;
-	case CALL_INDIRECT: 		call_indirect();		break;
+	case GET_LOCAL: 		get_local_op();			break;
+	case SET_LOCAL: 		set_local_op();			break;
+	case TEE_LOCAL: 		tee_local_op();			break;
+	case GET_GLOBAL: 		get_global_op();		break;
+	case SET_GLOBAL: 		set_global_op();		break;
+	case SELECT: 			select_op();			break;
+	case CALL: 			call_op();			break;
+	case CALL_INDIRECT: 		call_indirect_op();		break;
 
 
 	// I32 ARITHMETIC
@@ -543,10 +474,10 @@ bool wasm_runtime::eval()
 	
 	// I32 COMPARISONS
 	case I32_WRAP:			convert_op(u_64, u_32);		break;
-	case I32_TRUNC_F32_S:		convert_op(f_32, s_32);		break;
-	case I32_TRUNC_F32_U:		convert_op(f_32, u_32);		break;
-	case I32_TRUNC_F64_S:		convert_op(f_64, s_32);		break;
-	case I32_TRUNC_F64_U:		convert_op(f_64, u_32);		break;
+	case I32_TRUNC_F32_S:		trunc_int_op(s_32, f_32);	break;
+	case I32_TRUNC_F32_U:		trunc_int_op(u_32, f_32);	break;
+	case I32_TRUNC_F64_S:		trunc_int_op(s_32, f_64);	break;
+	case I32_TRUNC_F64_U:		trunc_int_op(u_32, f_64);	break;
 	case I32_REINTERPRET_F32:	reinterpret_op(f_32, u_32);	break;
 
 	// I64 ARITHMETIC
@@ -585,10 +516,10 @@ bool wasm_runtime::eval()
 	// I64 COMPARISONS
 	case I64_EXTEND_S:		convert_op(s_32, s_64);		break;
 	case I64_EXTEND_U:		convert_op(u_32, u_64);		break;
-	case I64_TRUNC_F32_S:		convert_op(f_32, s_64);		break;
-	case I64_TRUNC_F32_U:		convert_op(f_32, u_64);		break;
-	case I64_TRUNC_F64_S:		convert_op(f_64, s_64);		break;
-	case I64_TRUNC_F64_U:		convert_op(f_64, u_64);		break;
+	case I64_TRUNC_F32_S:		trunc_int_op(s_64, f_32);	break;
+	case I64_TRUNC_F32_U:		trunc_int_op(u_64, f_32);	break;
+	case I64_TRUNC_F64_S:		trunc_int_op(s_64, f_64);	break;
+	case I64_TRUNC_F64_U:		trunc_int_op(u_64, f_64);	break;
 	case I64_REINTERPRET_F64:	reinterpret_op(f_32, u_32);	break;
 
 	// F32 ARITHMETIC 
@@ -688,7 +619,7 @@ bool wasm_runtime::eval()
 		trap("Unkown instruction reached");
 	}
 
-	return true;
+	return not done;
 }
 
 #endif /* INTERPRETER_WASM_INTERPRETER_H */

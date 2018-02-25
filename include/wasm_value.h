@@ -22,12 +22,25 @@ typedef union wasm_value_
 	wasm_sint64_t  s64;
 	wasm_float32_t f32;
 	wasm_float64_t f64;
+	void* _ptr;
+	const void* _const_ptr;
 } wasm_value_t;
 
 
 # ifdef __cplusplus
 
 } /* extern "C" */
+inline const wasm_value_t& zero_wasm_value() 
+{
+	static const wasm_value_t zero([](){
+		wasm_value_t zer;
+		char* mem = reinterpret_cast<char*>(&zer);
+		for(std::ptrdiff_t i = 0; i < std::ptrdiff_t(sizeof(zer)); ++i)
+			mem[i] = 0;
+		return zer;
+	}());
+	return zero;
+}
 
 // pointers-to-members for abstraction over member access
 inline wasm_uint32_t  wasm_value_t::* const u_32 = &wasm_value_t::u32;

@@ -5,7 +5,7 @@ import leb128
 from warnings import warn as warn_user
 from collections import OrderedDict
 from WasmBinaryParser import WasmBinaryParser
-
+import io
 
 class ModuleDef:
 
@@ -25,7 +25,7 @@ class ModuleDef:
 	]
 	known_section_names = set(section_names[1:])
 	
-	def __init__(self, filepath, name):
+	def __init__(self, filepath: str, name: str):
 		self.name = name 
 		self.sections = OrderedDict()
 		self.section_count = 0
@@ -40,7 +40,7 @@ class ModuleDef:
 
 	
 	@staticmethod
-	def _verify_header(module_file):
+	def _verify_header(module_file: io.IOBase):
 		header_data = module_file.read(8)
 		magic_number, version = WasmBinaryParser(header_data).parse_format('<2I')
 		assert magic_number == consts.Module.magic_number
@@ -79,7 +79,7 @@ class ModuleDef:
 			self.sections[section_name] = (data,)
 		self.section_count += 1
 		
-	def __getitem__(self, key):
+	def __getitem__(self, key: str):
 		return self.sections[key]
 	
 	def __len__(self):
@@ -90,17 +90,3 @@ class ModuleDef:
 	
 	def get_known_sections(self):
 		return tuple(self.sections.get_default(name, b'') for name in ModuleDef.section_names[1:])
-
-
-		
-		
-
-
-
-
-
-
-
-
-
-

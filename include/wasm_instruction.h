@@ -250,5 +250,11 @@ inline bool wasm_instruction_dne(wasm_opcode::wasm_opcode_t opcode)
 
 
 
+const std::array<const char*, 256>& instruction_names();
+
+
+
+
+
 
 #endif /* WASM_INSTRUCTION_H */

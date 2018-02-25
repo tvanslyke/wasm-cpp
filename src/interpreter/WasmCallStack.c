@@ -7,6 +7,7 @@
 typedef struct WasmFrame_ WasmFrame;
 
 typedef struct WasmFrameBase_ {
+	const uint_least32_t function_index;
 	struct WasmFrame_* ret;
 	const opcode_t* program_counter;
 	const size_t locals_count;
@@ -33,6 +34,10 @@ static size_t WasmFrameBase_LocalsCount(const WasmFrameBase* self)
 	return self->locals_count;
 }
 
+static size_t WasmFrameBase_FunctionIndex(const WasmFrameBase* self)
+{
+	return self->function_index;
+}
 
 static const opcode_t* WasmFrameBase_Code(const WasmFrameBase* self)
 {
@@ -101,6 +106,11 @@ static wasm_value_t* WasmFrame_Locals(WasmFrame* self)
 	return self->locals;
 }
 
+static size_t WasmFrame_FunctionIndex(const WasmFrame* self)
+{
+	return WasmFrameBase_FunctionIndex(WasmFrame_ConstBase(self));
+}
+
 static const opcode_t* WasmFrame_Code(const WasmFrame* self)
 {
 	return WasmFrameBase_Code(WasmFrame_ConstBase(self));
@@ -135,11 +145,12 @@ static size_t WasmFrame_SizeOf(const WasmFrame* self)
 	return next_frame_offset + align_err;
 }
 
-static WasmFrame* WasmFrame_PushFrame(WasmFrame* self, const struct wasm_function_storage* func, size_t* bytes_total)
+static WasmFrame* WasmFrame_PushFrame(WasmFrame* self, const struct wasm_function_storage* func, size_t* bytes_total, size_t index)
 {
 	// number of bytes to the beginning of the next frame
 	const size_t offset = WasmFrame_SizeOf(self);
 	WasmFrameBase base = {
+		.function_index = index,
 		.ret = self,
 		.program_counter = FunctionStorage_Code(func),
 		.locals_count = FunctionStorage_LocalsCount(func),
@@ -319,11 +330,11 @@ void WasmCallStack_Delete(void* self)
 	free(self);
 }
 
-int WasmCallStack_PushFrame(WasmCallStack* self, const struct wasm_function_storage* func)
+int WasmCallStack_PushFrame(WasmCallStack* self, const struct wasm_function_storage* func, size_t index)
 {
 	WasmFrame* current_frame = WasmCallStack_CurrentFrame(self);
 	size_t* rem = WasmCallStack_RemainingPointer(self);
-	WasmFrame* new_frame = WasmFrame_PushFrame(current_frame, func, rem);
+	WasmFrame* new_frame = WasmFrame_PushFrame(current_frame, func, rem, index);
 	if(!new_frame)
 		return -1;
 	WasmCallStack_SetCurrentFrame(self, new_frame);
@@ -370,4 +381,15 @@ wasm_value_t* WasmCallStack_Locals(WasmCallStack* self)
 {
 	return WasmFrame_Locals(WasmCallStack_CurrentFrame(self));
 }
+
+size_t WasmCallStack_FunctionIndex(const WasmCallStack* self)
+{
+	return WasmFrame_FunctionIndex(WasmCallStack_ConstCurrentFrame(self));
+}
+
+size_t WasmCallStack_LocalsCount(const WasmCallStack* self)
+{
+	return WasmFrame_LocalsCount(WasmCallStack_ConstCurrentFrame(self));
+}
+
 

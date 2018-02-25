@@ -119,11 +119,18 @@ struct GNU_Intrin
 	static constexpr std::size_t popcount(T value)
 	{
 		if constexpr(bits == long_long_bits)
-			return __builtin_ctzll(value);
+			return __builtin_popcount(value);
 		else if constexpr(bits == long_bits)
-			return __builtin_ctzl(value);
+			return __builtin_popcount(value);
 		else
-			return __builtin_ctz(value);
+		{
+			// we want to avoid any problems with sign extension here
+			// so we'll memcpy in the bits of 'value'
+			static_assert(bits <= int_bits);
+			unsigned int value_cpy = 0;
+			std::memcpy(&value_cpy, &value, sizeof(value));
+			return __builtin_popcount(value_cpy);
+		}
 	}
 };
 #endif 

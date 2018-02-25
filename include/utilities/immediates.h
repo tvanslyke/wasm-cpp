@@ -44,6 +44,15 @@ const wasm_opcode::wasm_opcode_t* opcode_skip_immediates(const wasm_opcode::wasm
 }
 
 
+template <class T>
+[[nodiscard]]
+const wasm_opcode::wasm_opcode_t* 
+read_raw_immediate(const wasm_opcode::wasm_opcode_t* code, T* dest)
+{
+	std::memcpy(dest, code, sizeof(T));
+	return code + sizeof(T);
+}
+
 
 
 

@@ -17,7 +17,6 @@ static_assert(sizeof(std::int_least32_t) == 4, "32-bit integer support is requir
 static_assert(sizeof(std::uint_least64_t) == 8, "64-bit integer support is required.");
 static_assert(sizeof(std::int_least64_t) == 8, "32-bit integer support is required.");
 
-
 using wasm_sint32_t 	= std::int_least32_t;
 using wasm_uint32_t 	= std::uint_least32_t;
 using wasm_sint64_t 	= std::int_least64_t;

@@ -1,5 +1,5 @@
-#ifndef FUNCTION_WASM_FUNCTION_H
-#define FUNCTION_WASM_FUNCTION_H
+#ifndef FUNCTION_WASM_FUNCTION_OLD_H
+#define FUNCTION_WASM_FUNCTION_OLD_H
 
 #include "wasm_base.h"
 #include "wasm_instruction.h"
@@ -32,4 +32,4 @@ private:
 };
 
 
-#endif /* FUNCTION_WASM_FUNCTION_H */
+#endif /* FUNCTION_WASM_FUNCTION_OLD_H */

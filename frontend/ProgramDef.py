@@ -5,14 +5,17 @@ from collections import defaultdict, namedtuple
 import constants as consts
 import array
 import struct
+import warnings
+
+# TODO: give export names to C++ layer for debug info
 
 class ResizableLimits:
 	
-	def __init__(self, initial_size, maximum_size = None):
+	def __init__(self, initial_size: int, maximum_size: int = None):
 		self._initial_size = initial_size
 		self._maximum_size = maximum_size
 
-	def __eq__(self, other):
+	def __eq__(self, other: 'ResizableLimits'):
 		return (isinstance(other, ResizableLimits)
 			and self.initial_size == other.initial_size
 			and self.maximum_size == other.maximum_size)
@@ -31,11 +34,16 @@ class Importable:
 	def __init__(self, truetype, tp):
 		assert isinstance(tp, truetype)
 		self._type = tp
+		self._name = None
 	
 	@property	
 	def type(self):
 		return self._type
 
+	@property
+	def name(self):
+		return self._name if self._name is not None else b''
+	
 	def assign_from(self, other):
 		assert type(self) == type(other)
 		members = vars(other)
@@ -44,19 +52,25 @@ class Importable:
 			setattr(self, member, value)
 		return self
 	
+	def assign_name(self, name):
+		assert not self.name
+		self._name = name
+	
+	
+
+	
 class Function(Importable):
 
 	class Type:
 		
-		def __init__(self, signature_id, parameter_count, return_count):
+		def __init__(self, signature_id: int, parameter_count: int, return_count: int):
 			self._signature = signature_id
 			self._parameter_count = parameter_count
 			self._return_count = return_count
 			
 		
 		def __eq__(self, other):
-			return (isinstance(other, Function.Type) 
-				and self.signature == other.signature)
+			return self.signature == other.signature
 
 		@property
 		def signature(self):
@@ -107,8 +121,7 @@ class Table(Importable):
 			self._elem_type = elem_type
 		
 		def __eq__(self, other):
-			return (isinstance(other, Table.Type) 
-				and self.elem_type == other.elem_type
+			return (self.elem_type == other.elem_type
 				and super(Table.Type, self) == super(Table.Type, other))
 
 		@property
@@ -278,7 +291,6 @@ class Global(Importable):
 			assert isinstance(self.initial_value, float)
 		
 		fmt.format(fmt_chr)
-		print("HERE")
 		return struct.pack(self.type.mutable, fmt_chr, self.initial_value)
 
 
@@ -358,8 +370,8 @@ class ProgramDef:
 		consts.InitExpr.get_global: (lambda parser, module: module.globals[parser.parse_unsigned_leb128(32)]), 
 		consts.InitExpr.i32_const:  (lambda parser, module: parser.parse_signed_leb128(32)), 
 		consts.InitExpr.i64_const:  (lambda parser, module: parser.parse_signed_leb128(64)), 
-		consts.InitExpr.f32_const:  (lambda parser, module: parser.parse_format('f')), 
-		consts.InitExpr.f64_const:  (lambda parser, module: parser.parse_format('d')), 
+		consts.InitExpr.f32_const:  (lambda parser, module: parser.parse_format('=f')[0]), 
+		consts.InitExpr.f64_const:  (lambda parser, module: parser.parse_format('=d')[0]), 
 	}
 	
 
@@ -391,7 +403,8 @@ class ProgramDef:
 			ProgramDef._read_memory_section,
 			ProgramDef._read_global_section,
 			ProgramDef._read_element_section,
-			ProgramDef._read_data_section
+			ProgramDef._read_data_section,
+			ProgramDef._read_export_section,
 		)
 		finalize_sequence = (
 			ProgramDef._read_code_section,
@@ -436,13 +449,15 @@ class ProgramDef:
 			for _ in range(count):
 				module_name = parser.parse_string()
 				field_name = parser.parse_string()
-				kind = parser.parse_format('B')
+				kind = parser.parse_format('=B')[0]
 				typedef = self._read_import_type(module, parser, kind)
 				self._add_module_import(module, module_name, field_name, typedef)
 
 	def _read_import_type(self, module, parser, kind):
 		if kind == consts.Kind.Function:
-			return Function.Type(module.function_signatures[parser.parse_unsigned_leb128(32)])
+			sig_idx = module.function_signatures[parser.parse_unsigned_leb128(32)]
+			param_count, return_count = (item for item in self.signature_id_map[sig_idx])
+			return Function.Type(sig_idx, param_count, return_count)
 		elif kind == consts.Kind.Table:
 			return Table.Type(*parser.parse_table_type())
 		elif kind == consts.Kind.Memory:
@@ -452,11 +467,11 @@ class ProgramDef:
 		else:
 			raise ValueError("Bad 'external_kind' (={}) encountered.".format(kind))
 	
-	def _add_module_import(self, module, module_name, field_name, typdef):
+	def _add_module_import(self, module, module_name, field_name, typedef):
 		default = ProgramDef.Types[typedef.kind](typedef)
 		module_imports = self.imports[module_name]
 		sz = len(module_imports)
-		actual = module_imports.set_default(field_name, default)
+		actual = module_imports.setdefault(field_name, default)
 		if defualt.type != actual.type:
 			raise ValueError("Mismatch WASM types in imported name {}.{}.".format(module_name, field_name))
 		module.add_import(actual)
@@ -512,13 +527,13 @@ class ProgramDef:
 			return Global(tp, initial_value=value)
 		globs[sz:sz + count] = (make_global() for _ in range(count))
 		
-		
+
 	def _eval_init_expr(self, module, expr):
 		parser = WasmBinaryParser(expr)
-		opcode = parser.parse_format('B')
+		opcode = parser.parse_format('=B')[0]
 		value = ProgramDef.__init_expr_opcodes[opcode](parser, module)
 		# initializer has to end with the 'END' instruction
-		assert parser.parse_format('B') == InitExpr.end
+		assert parser.parse_format('=B')[0] == InitExpr.end
 		try:
 			value = value.initial_value
 		except AttributeError:
@@ -526,24 +541,23 @@ class ProgramDef:
 		return value
 		
 	def _read_export_section(self, module):
-		
 		parser = self._get_section_parser(module, "Export")
 		if parser is None:
 			return None
 		count = parser.parse_unsigned_leb128(32)
 		for i in range(count):
 			field_name = parser.parse_string()
-			kind = parser.parse_format('B')
+			kind = parser.parse_format('=B')[0]
 			index = parser.parse_unsigned_leb128(32)
-			self.resolve_import(module, field_name, kind, index)
+			self._resolve_export(module, field_name, kind, index)
 
 	def _resolve_export(self, module, field_name, kind, index):
-		
 		default = module.get_index(kind, index)
-		actual = self.exports[module.name].set_default(field_name, default)
+		actual = self.exports[module.name].setdefault(field_name, default)
 		if actual is not default:
 			actual.assign_from(default)
 			module.set_index(kind, index, actual)
+		actual = self.exports[module.name][field_name].assign_name(module.name.encode('utf8') + b'.' + field_name)
 	
 	def _read_start_section(self):
 		parser = self._get_section_parser(self.modules[0], "Start")
@@ -613,7 +627,22 @@ class ProgramDef:
 			module.tables = array.array('L', (all_tables[t] for t in module.tables))
 			module.memories = array.array('L', (all_memories[m] for m in module.memories))
 			module.globals = array.array('L', (all_globals[g] for g in module.globals))
-		
+		index_spaces = (
+			all_functions,
+			all_tables,
+			all_memories,
+			all_globals,
+		)
+	
+		for module_name, module_exports in self.exports.items():
+			for export_name in module_exports:
+				value = module_exports[export_name]
+				if value is None:
+					warnings.warn("Unresolved export '{}.{}'. Ignoring.".format(module_name, export_name))
+				else:
+					module_exports[export_name] = (value.kind, index_spaces[value.kind][value])
+				
+				
 		self.start_function = all_functions[self.start_function]
 		self.functions = tuple(sorted(all_functions.keys(), key=lambda k: all_functions[k]))
 		del all_functions
@@ -632,7 +661,19 @@ class ProgramDef:
 				for i, offset in enumerate(table):
 					if offset is not None:
 						table[i] = module.functions[offset]
+		
 
-
-
+	def serialize_exports(self):
+		fmt_base = '=BL{}s'
+		name_fmt = '{}.{}'
+		serialized = []
+		for module_name, module_exports in self.exports.items():
+			for export_name, value in module_exports.items():
+				if value is None:
+					continue
+				kind, index = value
+				name_string = name_fmt.format(module_name, export_name).encode('utf8')
+				fmt = fmt_base.format(len(name_string))
+				serialized.append(struct.pack(fmt, kind, index, name_string))
+		return serialized
 	
