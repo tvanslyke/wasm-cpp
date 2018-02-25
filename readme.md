@@ -1,7 +1,7 @@
 # wasm-cpp
 [![Language](https://img.shields.io/badge/language-C++17-blue.svg)](https://isocpp.org/) ![Language2](https://img.shields.io/badge/language-C11-blue.svg) ![Language3](https://img.shields.io/badge/language-CPython3.6-blue.svg) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-wasm-cpp is an **in-progress** WebAssembly runtime environment written in C++17 and C11 with a Python3.6 frontend.  wasm-cpp i
+wasm-cpp is an **in-progress** WebAssembly runtime environment written in C++17 and C11 with a Python3.6 frontend.
 
 This project is currently unfinished and untested.
 
