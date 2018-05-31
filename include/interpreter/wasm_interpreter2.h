@@ -1,5 +1,5 @@
-#ifndef INTERPRETER_WASM_INTERPRETER_H
-#define INTERPRETER_WASM_INTERPRETER_H
+#ifndef INTERPRETER_WASM_INTERPRETER2_H
+#define INTERPRETER_WASM_INTERPRETER2_H
 
 #include "wasm_value.h"
 #include "wasm_instruction.h"
@@ -397,10 +397,48 @@ struct wasm_runtime
 	}
 };
 
+enum class StateChangeType {
+	no_change,
+	unary_op,
+	binary_op,
+	memory_write,
+	memory_read,
+	jump,
+	block,
+	call,
+	indirect_call,
+};
+
+struct StateChange {
+	StateChangeType change_type;
+	struct FunctionCall {
+		std::size_t function_index;
+	};
+
+	struct IndirectFunctionCall {
+		std::size_t table;
+		std::size_t table_index;
+	};
+
+	struct UnaryOp {
+		WasmValueType argument_type;
+		WasmValueType result_type;
+		wasm_value_t (*operation)(wasm_value_t);
+	};
+
+	struct BinaryOp {
+		WasmValueType first_argument_type;
+		WasmValueType second_argument_type;
+		WasmValueType result_type;
+		wasm_value_t (*operation)(wasm_value_t, wasm_value_t);
+	};
+
+
+};
 
 
 
-bool wasm_runtime::eval()
+StateChange opcode_dispatch()
 {
 	// TODO: implement compile-time switch for computed goto with GCC
 	using namespace wasm_opcode;
@@ -624,4 +662,4 @@ bool wasm_runtime::eval()
 	return not done;
 }
 
-#endif /* INTERPRETER_WASM_INTERPRETER_H */
+#endif /* INTERPRETER_WASM_INTERPRETER2_H */

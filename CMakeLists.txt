@@ -29,7 +29,7 @@ set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} -std=c++17 -O3 -Wall -Wextra")
 
 set(PYTHON_DEBUG_LIBRARIES "/usr/lib/x86_64-linux-gnu/libpython3.6dm.so")
 
-add_executable(wasm-cpp src/main.cpp src/frontend/create_program.cpp src/frontend/leb128/leb128.c src/interpreter/WasmCallStack.c src/function/wasm_function_storage.c src/function/wasm_function.cpp src/module/wasm_program_state.cpp)
+add_executable(wasm-cpp src/main.cpp src/frontend/create_program.cpp src/frontend/leb128/leb128.c src/module/wasm_program_state.cpp)
 
 target_link_libraries(wasm-cpp optimized ${PYTHON_LIBRARIES} debug ${PYTHON_DEBUG_LIBRARIES})
 

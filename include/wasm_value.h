@@ -14,22 +14,43 @@ typedef float 	       wasm_float32_t;
 typedef double 	       wasm_float64_t;
 # endif /* __cplusplus */
 
-typedef union wasm_value_
-{
-	wasm_uint32_t  u32;
-	wasm_uint64_t  u64;
-	wasm_sint32_t  s32;
-	wasm_sint64_t  s64;
-	wasm_float32_t f32;
-	wasm_float64_t f64;
-	void* _ptr;
-	const void* _const_ptr;
+typedef struct { 
+	union// wasm_value_
+	{
+		wasm_uint32_t  u32;
+		wasm_uint64_t  u64;
+		wasm_sint32_t  s32;
+		wasm_sint64_t  s64;
+		wasm_float32_t f32;
+		wasm_float64_t f64;
+	};
 } wasm_value_t;
 
+typedef wasm_value_t WasmValue;
+
+std::ostream& operator<<(std::ostream& os, WasmValue value)
+{
+	wasm_sint32_t i32;
+	wasm_sint64_t i64;
+	wasm_float32_t f32;
+	wasm_float64_t f64;
+	std::memcpy(&i32, &value, sizeof(i32));
+	std::memcpy(&i64, &value, sizeof(i64));
+	std::memcpy(&f32, &value, sizeof(f32));
+	std::memcpy(&f64, &value, sizeof(f64));
+	os << "Value(";
+	os << "i32 = " << i32;
+	os << ", i64 = " << i32;
+	os << ", f32 = " << f32;
+	os << ", f64 = " << f64;
+	os << ')';
+	return os;
+}
 
 # ifdef __cplusplus
 
 } /* extern "C" */
+
 inline const wasm_value_t& zero_wasm_value() 
 {
 	static const wasm_value_t zero([](){

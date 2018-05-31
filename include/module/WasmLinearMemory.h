@@ -13,9 +13,6 @@
 
 namespace wasm {
 
-struct WasmLinearMemory;
-
-
 struct WasmLinearMemory
 {
 	static constexpr const std::size_t page_size = 65536;
@@ -46,6 +43,8 @@ public:
 
 	using size_type = vector_type::size_type;
 	using difference_type = vector_type::difference_type;
+
+	WasmLinearMemory(const parse::Memory& def, const parse::DataSegment& seg);
 
 	friend const_page_span pages(const WasmLinearMemory& self)
 	{ return const_page_span(self.memory_.data(), self.memory_.size()); }
@@ -108,6 +107,12 @@ WasmLinearMemory::size_type size(const WasmLinearMemory& self)
 { return data(self).size(); }
 
 
+WasmLinearMemory::WasmLinearMemory(const parse::Memory& def):
+	vector_type(def.initial)
+{
+	auto bytes = data(*this);
+	std::fill(bytes.begin(), bytes.end(), 0);
+}
 
 
 } /* namespace wasm */

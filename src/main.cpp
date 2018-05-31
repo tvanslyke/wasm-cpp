@@ -18,6 +18,8 @@ int main(int argc, const char* argv[])
 		program_state, 
 		call_stack
 	);
+	
+	wasm_runtime cpy(interpreter);
 	try
 	{
 		while(interpreter.eval())
@@ -36,5 +38,10 @@ int main(int argc, const char* argv[])
 		}
 		throw;
 	}
-	return 0;
+	auto nreturns = (call_stack.const_stack_pointer() - stack.data());
+	assert(nreturns == 0 or nreturns == 1);
+	if(nreturns)
+		return stack[0].s32;
+	else
+		return 0;
 }

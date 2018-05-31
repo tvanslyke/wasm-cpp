@@ -135,6 +135,10 @@ struct WasmProgramStackBase
 			str << '\t' << wasm_value_str(*sp) << '\n';
 		return str.str();
 	}
+	const wasm_value_t* const_stack_pointer() const
+	{
+		return stack_pointer_;
+	}
 protected:
 	WasmProgramStackBase(wasm_value_t* stack_begin, wasm_value_t* stack_end):
 		stack_bottom_(stack_begin),

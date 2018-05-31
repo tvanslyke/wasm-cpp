@@ -1,0 +1,10 @@
+#ifndef TRANSFORM_ITERATOR_H
+#define TRANSFORM_ITERATOR_H
+
+
+template <class It, class Transform>
+struct TransformIterator {
+	
+};
+
+#endif /* TRANSFORM_ITERATOR_H */

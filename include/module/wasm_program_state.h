@@ -43,13 +43,12 @@ private:
 	static std::vector<wasm_value_t> init_globals(wasm_program_def& program_def);
 	static std::vector<bool> init_global_mutabilities(wasm_program_def& program_def);
 
-	// TODO: segregate const globals and non-const globals
 	const std::vector<WasmFunction> functions;
 	std::vector<wasm_linear_memory> memories;
 	const std::vector<wasm_table> tables;
+	// TODO: segregate const globals and non-const globals
 	std::vector<wasm_value_t> globals;
 	const std::vector<bool> global_mutabilities;
-	// for debugging, stack traces, etc
 public:
 	const name_map_t name_map;
 	const std::size_t start_function_index;
