@@ -70,15 +70,11 @@ public:
 		);
 	}
 
-	friend wasm_sint32_t grow_memory(WasmLinearMemory& self, wasm_uint32_t delta)
+	friend std::ptrdiff_t grow_memory(WasmLinearMemory& self, std::uint32_t delta)
 	{
-		wasm_uint32_t prev = static_cast<wasm_uint32_t>(pages(self).size());
-		assert(prev == pages(self).size());
+		std::ptrdiff_t prev = pages(self).size();
 		if(delta > 0u)
 		{
-			std::size_t new_size = self.vec_.size() + delta;
-			if(new_size > maximum_)
-				return -1;
 			try
 			{
 				self.resize(self.vec_.size() + delta);
@@ -88,7 +84,7 @@ public:
 				return -1;
 			}
 		}
-		return reinterpret_cast<const wasm_sint32_t&>(prev);
+		return prev;
 	}
 
 	friend bool matches(const WasmLinearMemory& self, const parse::Memory& tp)
@@ -112,10 +108,6 @@ private:
 	const std::size_t maximum_ = std::numeric_limits<std::size_t>::max();
 };
 
-LanguageType index_type(const WasmLinearMemory& self)
-{
-	return 
-}
 
 WasmLinearMemory::size_type current_memory(const WasmLinearMemory& self)
 { return pages(self).size(); }
@@ -147,7 +139,7 @@ gsl::span<const char> compute_effective_address(
 		throw std::out_of_range("Base address is too large while computing linear memory effective address.");
 	std::size_t effective_address = base;
 	effective_address += offset;
-	if(mem.size() <= effective_address)
+	if(mem.size() <= effective_addres)
 		throw std::out_of_range("Computed effective address is too large for linear memory.");
 	if(std::size_t remaining = mem.size() - effective_address; remaining < sizeof(Type))
 		throw std::out_of_range("Linear memory access partially acesses out-of-bounds memory.");
@@ -164,19 +156,18 @@ gsl::span<char> compute_effective_address(
 	auto addr = compute_effective_address(std::as_const(self), base, offset, size);
 	const char* data = addr.data();
 	auto size = addr.data();
-	return gsl::span<char>(const_cast<char*>(data), size);
+	return gsl::span<char>(
 }
 
 
 template <class Type>
-Type load_little_endian(const WasmLinearMemory& self, wasm_uint32_t base, wasm_uint32_t offset)
+Type load(const WasmLinearMemory& self, wasm_uint32_t base, wasm_uint32_t offset)
 {
 	static_assert(std::is_trivially_copyable_v<Type>);
 	static_assert(std::is_arithmetic_v<Type>);
 	Type result;
-	auto addr = compute_effective_address(self, base, offset, sizeof(Type));
-	assert(addr.size() == sizeof(result));
-	std::memcpy(&result, addr.data(), sizeof(result));
+	const char* pos = compute_effective_address(self, base, offset, sizeof(Type));
+	std::memcpy(&result, pos, sizeof(result));
 	if(not system_is_little_endian())
 	{
 		static_assert(std::is_same_v<decltype(byte_swap(value)), decltype(value)>);
@@ -189,10 +180,9 @@ template <class Type, class PassedType>
 void store_little_endian(const WasmLinearMemory& self, wasm_uint32_t base, wasm_uint32_t offset, PassedType value)
 {
 	static_assert(std::is_trivially_copyable_v<Type>);
-	static_assert(std::is_arithmetic_v<Type>);
 	static_assert(std::is_same_v<Type, PassedType>);
-	auto pos = compute_effective_address(self, base, offset, sizeof(Type));
-	assert(addr.size() == sizeof(value));
+	static_assert(std::is_arithmetic_v<Type>);
+	const char* pos = compute_effective_address(self, base, offset, sizeof(Type));
 	if(not system_is_little_endian())
 	{
 		static_assert(std::is_same_v<decltype(byte_swap(value)), decltype(value)>);

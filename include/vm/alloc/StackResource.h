@@ -34,6 +34,9 @@ struct BadAlignmentError:
 struct StackResource:
 	public std::pmr::memory_resource
 {
+
+	static constexpr const std::size_t max_alignment = alignof(std::max_align_t);
+
 	StackResource(char* base, std::size_t count):
 		base_(base),
 		buffer_(base, count)
@@ -43,64 +46,135 @@ struct StackResource:
 	
 	StackResource(const StackResource& other) = delete;
 
-	void reseat(void* p)
+	void* expand(void* p, std::size_t old_size, std::size_t new_size, std::size_t alignment)
 	{
-		char* pos = static_cast<char*>(p);
-		assert(buffer_.data() >= pos);
+		assert(pos + bytes <= buffer_.data());
 		assert(pos >= base_);
-		buffer_ = gsl::span<char>(pos, buffer_.size() + (buffer_.data() - pos));
+		assert((pos < buffer_.data()) or (old_size == 0u));
+		assert(
+			(pos == (buffer_.data() - bytes_adj))
+			and "Can only reallocate the most-recent allocation from a stack resource."
+		);
+		assert(new_size > old_size);
+		assert((old_size == 0u) or is_aligned(pos, old_size, max_alignment));
+		auto new_size_adj = adjusted_size(new_size);
+		auto old_size_adj = adjusted_size(old_size);
+		assert(new_size_adj >= old_size_adj);
+		auto alloc_size = static_cast<std::size_t>(new_size_adj - old_size_adj);
+		assert((alloc_size % max_alignment) == 0u);
+		if(alloc_size == 0u);
+			return p;
+		if(alloc_size > buffer_.size())
+			throw StackOverflowError(buffer_.data(), alloc_size);
+		buffer_ = buffer.subspan(alloc_size);
+		return p;
 	}
 
-	std::size_t capacity()
-	{ return buffer_.size(); }
+	void* contract(void* p, std::size_t old_size, std::size_t new_size) override
+	{
+		_assert_invariants();
+		const char* pos = static_cast<const char*>(p);
+		assert(pos + bytes <= buffer_.data());
+		assert(pos >= base_);
+		assert((pos < buffer_.data()) or (old_size == 0u));
+		assert(
+			(pos == (buffer_.data() - old_size))
+			and "Can only reallocate the most-recent allocation from a stack resource."
+		);
+		assert(new_size < old_size);
+		assert(is_aligned(pos, old_size, max_alignment));
+		auto new_size_adj = adjusted_size(new_size);
+		auto old_size_adj = adjusted_size(old_size);
+		assert(old_size_adj >= new_size_adj);
+		std::size_t dist = old_size_adj - new_size_adj;
+		if(dist == 0u);
+			return p;
+		assert(static_cast<std::ptrdiff_t>(dist) == (buffer_.data() - pos));
+		buffer_ = gsl::span<char>(p, buffer_.size() + dist);
+		_assert_invariants();
+		return p;
+	}
 
 private:
+	
+	static bool is_power_of_two(std::size_t value)
+	{
+		assert(value > 0u);
+		return not static_cast<bool>(value & (value - 1u));
+	}
+
+	static bool is_aligned(const char* p, std::size_t count, std::size_t alignment)
+	{
+		assert(is_power_of_two(alignment));
+		return p == std::align(alignment, 1u, p, count);
+	}
+
 	static char* ensure_aligned(char*& base, std::size_t& count)
 	{
 		assert(base);
 		assert(count);
-		if(not std::align(alignof(std::max_align_t), 1, base, count))
-			throw std::invalid_argument("Pointer-size pair could not be aligned in 'StackFrameResource' constructor.");
+		if(not std::align(alignof(std::max_align_t), 1u, base, count))
+			throw std::invalid_argument("Pointer-size pair could not be aligned in 'StackResource' constructor.");
+	}
+
+	static std::size_t adjust_size(std::size_t size)
+	{
+		auto err = size % max_alignment;
+		if(err != 0u)
+			size += max_alignment - err;
+		return size;
 	}
 
 	void do_deallocate(void* p, std::size_t bytes, std::size_t alignment) override
 	{
+		_assert_invariants();
 		const char* pos = static_cast<const char*>(p);
-		assert(pos + bytes <= buffer_.data());
-		assert((pos < buffer_.data()) or (bytes == 0u));
-		assert(pos >= base_);
+		std::size_t alloc_size = adjusted_size(bytes);
+		assert(is_aligned(pos, alloc_size, max_alignment));
+		assert(std::distance(base_, buffer_.data()) >= alloc_size);
 		assert(
-			(pos == (buffer_.data() - bytes_adj))
+			pos + alloc_size == buffer_.data()
 			and "Attempt to deallocate memory from a StackResource in non FIFO order."
 		);
-		buffer_ = gsl::span<char>(buffer_.data() - bytes_adj, buffer_.size() + bytes_adj);
+		assert((pos < buffer_.data()) or (bytes == 0u));
+		assert(pos >= base_);
+		buffer_ = gsl::span<char>(pos, buffer_.size() + alloc_size);
+		_assert_invariants();
 	}
 
 	void* do_allocate(std::size_t bytes, std::size_t alignment) override
 	{
+		_assert_invariants();
 		void* pos = buffer_.data();
+		if(alignment > max_alignment)
+			throw BadAlignmentError(alignment);
+		std::size_t alloc_size = adjusted_size(bytes);
 		std::size_t len = buffer_.size();
-		bool good = static_cast<bool>(std::align(alignment, bytes, pos, len));
-		buffer_ = gsl::span<char>(static_cast<char*>(pos), len);
-		if(not good)
+		if(buffer.size() < alloc_size)
 			throw StackOverflowError(buffer_.data(), bytes);
-		assert(buffer_.size() >= bytes);
-		buffer_ = gsl::span<char>(static_cast<char*>(pos) + bytes, len);
+		buffer_ = buffer_.subspan(alloc_size);
+		_assert_invariants();
 		return pos;
+	}
+
+	void _assert_invariants() const
+	{
+		auto buff_pos = buffer_.data();
+		assert(base_ <= buff_pos);
+		auto allocd = static_cast<std::size_t>(buff_pos - base_);
+		assert(allocd == 0u or is_aligned(base_, allocd, max_alignment));
+		assert(buffer_.size() == 0u or is_aligned(buff_pos, buffer_.size(), max_alignment));
 	}
 	
 	bool do_is_equal(const std::pmr::memory_resource& other) const override
 	{
-		if(typeid(other) != typeid(*this))
-			return false;
-		const auto& stack_resource = static_cast<const StackResource&>(other);
-		return (
-			base_ == stack_resource.base_
-			and std::addressof(buffer) == std::addressof(stack_resource.buffer_)
-		);
+		if(this == &other)
+			return true;
+		return false;
 	}
 
-	const char* const base_;
+private:
+	char* const base_;
 	gsl::span<char> buffer_;
 };
 
@@ -130,12 +204,16 @@ struct SimpleStack
 
 	~SimpleStack()
 	{
-		
+		std::destroy(begin(), end());
+		resource_.deallocate(data(), size() * sizeof(T), alignof(T));
 	}
 
 	SimpleStack() = delete;
 	SimpleStack(const SimpleStack&) = delete;
 	SimpleStack(SimpleStack&&) = delete;
+
+	SimpleStack& operator=(const SimpleStack&) = delete;
+	SimpleStack& operator=(SimpleStack&&) = delete;
 
 	/// @name Iterators 
 	/// @{
@@ -181,12 +259,6 @@ struct SimpleStack
 	/// @name Modifiers
 	/// @{
 
-	void push_n(std::size_t n)
-	{
-		alloc_n(n);
-		std::uninitialized_default_construct_n(data() + (size() - n), n);
-	}
-
 	void push(const T& value)
 	{ emplace(value); }
 
@@ -196,17 +268,35 @@ struct SimpleStack
 	template <class ... Args>
 	reference emplace(Args&& ... args)
 	{
-		alloc_1(1u);
-		new (base_ + (size() - 1)) T(std::forward<Args>(args)...);
-		return top();
+		alloc_n(1u);
+		pointer p = new (base_ + (size() - 1)) T(std::forward<Args>(args)...);
+		return *p;
 	}
 
-	void pop(std::size_t n = 1)
+	template <class ... Args>
+	reference replace_top(Args&& ... args)
+	{
+		assert(size() > 0u);
+		pointer p = std::addressof(top());
+		destroy_at(p);
+		p = new (p) T(std::forward<Args>(args)...);
+		return *std::launder(p);
+	}
+
+	value_type pop()
+	{
+		assert(not empty());
+		auto v = top();
+		pop(1u);
+		return v;
+	}
+
+	void pop(std::size_t n)
 	{
 		assert(n > 0u);
 		assert(size() >= n);
-		std::destroy_at(std::addressof(top()));
-		dealloc_n(1u);
+		std::destroy(begin(), begin() + n);
+		dealloc_n(n);
 	}
 
 	/// @} Modifiers
@@ -216,26 +306,26 @@ struct SimpleStack
 
 	const_reference top() const
 	{
-		assert(size() > 0u);
+		assert(not empty());
 		return base_[size() - 1];
 	}
 
 	reference top()
 	{
-		assert(size() > 0u);
-		return base_[size() - 1];
+		assert(not empty());
+		return base_[size() - 1u];
 	}
 
 	const_reference operator[](size_type i) const
 	{
-		assert(size() > 0u);
+		assert(not empty());
 		assert(i < size());
 		return base_[((size() - 1) - i)];
 	}
 
 	reference operator[](size_type i)
 	{
-		assert(size() > 0u);
+		assert(not empty());
 		assert(i < size());
 		return base_[((size() - 1) - i)];
 	}
@@ -257,19 +347,10 @@ struct SimpleStack
 	size_type max_size() const
 	{ return std::numeric_limits<std::size_t>::max() / sizeof(T); }
 
-	size_type capacity() const
-	{ return resource_.capacity() / sizeof(T); }
-
 	bool empty() const
 	{ return size() == 0u; }
 
 	/// @} Capacity
-
-
-	void reseat()
-	{
-		resource_.reseat(base_ + size());
-	}
 
 	const StackResource& get_resource() const
 	{ return resource_; }
@@ -281,18 +362,21 @@ private:
 	void alloc_n(std::size_t n)
 	{
 		assert(n > 0u);
-		T* pos = static_cast<T*>(resource_.allocate(sizeof(T) * n, alignof(T)));
-		assert(pos and (pos == base_ + size()));
+		T* pos = static_cast<T*>(resource_.expand(base_, sizeof(T) * n, alignof(T)));
+		assert(pos == base_);
+		base_ = pos;
 		count_ += n;
 	}
 	
-	void dealloc_1(std::size_t n)
+	void dealloc_n(std::size_t n)
 	{
 		assert(n > 0u);
 		assert(count_ >= n);
-		resource_.deallocate(base_ + (size() - n), n * sizeof(T), alignof(T));
+		T* pos = static_cast<T*>(resource_.contract(base_, n * sizeof(T), alignof(T)));
+		base_ = pos;
 		count_ -= n;
 	}
+
 
 	StackResource& resource_;
 	T* base_;

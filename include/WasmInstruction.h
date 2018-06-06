@@ -731,13 +731,15 @@ decltype(auto) visit_opcode(Visitor visitor, It first, It last)
 	if constexpr(std::is_invocable_v<Visitor, OpCode, std::nullopt_t>)
 	{
 		if(not opcode_exists(static_cast<underlying_type>(op)))
+		{
 			return visitor(
-				op, 
-				BadOpcodeError(op, "Given op is not a valid WASM opcode."),
 				first, 
+				last,
 				pos,
-				last
+				op,
+				BadOpcodeError(op, "Given op is not a valid WASM opcode."),
 			);
+		}
 	}
 	else
 	{
@@ -749,23 +751,32 @@ decltype(auto) visit_opcode(Visitor visitor, It first, It last)
 	{
 		wasm_uint32_t flags, offset;
 		std::tie(flags, offset, pos) = detail::read_memory_immediate(pos, last);
-		return std::apply(visitor(op, flags, offset, first, pos, last));
+		return visitor(first, last, pos, op, flags, offset);
 	}
 	else if(
 		(op >= OpCode::GET_LOCAL and op <= OpCode::SET_GLOBAL)
-		or (op >= OpCode::CALL and op <= OpCode::CALL_INDIRECT)
-		or (op >= OpCode::BR and op <= OpCode::BR_IF)
+		or (op == OpCode::CALL or op == OpCode::CALL_INDIRECT)
+		or (op == OpCode::BR or op == OpCode::BR_IF)
+		or (op == OpCode::ELSE)
 	)
 	{
 		wasm_uint32_t value;
 		std::tie(value, pos) = detail::read_serialized_immediate<wasm_uint32_t>(pos, last);
-		return visitor(op, value, first, pos, last);
+		return visitor(first, last, pos, op, value);
 	}
-	else if(op >= OpCode::BLOCK and op >= OpCode::IF)
+	else if(op == OpCode::BLOCK or op == OpCode::IF)
 	{
 		assert(first != last);
 		LanguageType tp = static_cast<LanguageType>(*first++);
-		return visitor(op, tp, first, pos, last);
+		was_uint32_t label;
+		std::tie(label, pos) = detail::read_serialized_immediate<wasm_uint32_t>(pos, last);
+		return visitor(first, last, pos, op, tp, label);
+	}
+	else if(op == OpCode::LOOP)
+	{
+		assert(first != last);
+		LanguageType tp = static_cast<LanguageType>(*first++);
+		return visitor(first, last, pos, op, tp);
 	}
 	else if(op == OpCode::BR_TABLE)
 	{
@@ -773,7 +784,7 @@ decltype(auto) visit_opcode(Visitor visitor, It first, It last)
 		std::tie(len, pos) = detail::read_serialized_immediate<wasm_uint32_t>(pos, last);
 		auto base = pos;
 		std::advance(pos, (1 + len) * sizeof(wasm_uint32_t));
-		return visitor(op, base, len, first, pos, last);
+		return visitor(first, last, pos, op, base, len);
 	}
 	
 	switch(op)
@@ -781,32 +792,1399 @@ decltype(auto) visit_opcode(Visitor visitor, It first, It last)
 	case OpCode::I32_CONST: {
 		wasm_sint32_t v;
 		std::tie(v, pos) = detail::read_serialized_immediate<wasm_sint32_t>(pos, last);
-		return visitor(op, v, first, pos, last);
+		return visitor(first, last, pos, op, v);
 		break;
 	}
 	case OpCode::I64_CONST: {
 		wasm_sint64_t v;
 		std::tie(v, pos) = detail::read_serialized_immediate<wasm_sint64_t>(pos, last);
-		return visitor(op, v, first, pos, last);
+		return visitor(first, last, pos, op, v);
 		break;
 	}
 	case OpCode::F32_CONST: {
 		wasm_float32_t v;
 		std::tie(v, pos) = detail::read_serialized_immediate<wasm_float32_t>(pos, last);
-		return visitor(op, v, first, pos, last);
+		return visitor(first, last, pos, op, v);
 		break;
 	}
 	case OpCode::F64_CONST: {	
 		wasm_float64_t v;
 		std::tie(v, pos) = detail::read_serialized_immediate<wasm_float64_t>(pos, last);
-		return visitor(op, v, first, pos, last);
+		return visitor(first, last, pos, op, v);
 		break;
 	}
 	default:
 		return visitor(op, first, pos, last);
 	}
-	assert(false and "All cases should have been handled by this point.");
+	assert(false and "Internal Error: All cases should have been handled by this point.");
 }
+
+struct MemoryImmediate:
+	public std::pair<const wasm_uint32_t, const wasm_uint32_t>
+{
+	using std::pair<const wasm_uint32_t, const wasm_uint32_t>::pair;
+};
+
+wasm_uint32_t flags(const MemoryImmediate& immed)
+{ return immed.first; }
+
+wasm_uint32_t offset(const MemoryImmediate& immed)
+{ return immed.second; }
+
+struct BlockImmediate:
+	public std::pair<const LanguageType, const wasm_uint32_t>
+{
+	using std::pair<const LanguageType, const wasm_uint32_t>::pair;
+};
+
+gsl::span<const LanguageType> signature(const BlockImmediate& immed)
+{ return gsl::span<const LanguageType>(&(immed.first), 1u); }
+
+std::size_t arity(const BlockImmediate& immed)
+{ return signature(immed).size(); }
+
+wasm_uint32_t offset(const BlockImmediate& immed)
+{ return immed.second; }
+
+struct BranchTableImmediate:
+{
+	template <class ... T>
+	BranchTableImmediate(T&& ... args):
+		table_(std::forward<T>(args)...)
+	{
+		
+	}
+
+	wasm_uint32_t at(wasm_uint32_t idx) const
+	{
+		idx = std::min(table_.size() - 1u, idx);
+		wasm_uint32_t depth;
+		std::memcpy(&depth, table_.data() + idx, sizeof(depth));
+		return depth;
+	}
+
+private:
+	const gsl::span<const char[sizeof(wasm_uint32_t)]> table_;
+};
+
+struct WasmInstruction
+{
+	using null_immediate_type         = std::monostate;
+	using i32_immediate_type          = wasm_sint32_t;
+	using i64_immediate_type          = wasm_sint64_t;
+	using f32_immediate_type          = wasm_float32_t;
+	using f64_immediate_type          = wasm_float64_t;
+	using offset_immediate_type       = wasm_uint32_t;
+	using memory_immediate_type       = MemoryImmediate;
+	using block_immediate_type        = BlockImmediate;
+	using loop_immediate_type         = LanguageType;
+	using branch_table_immediate_type = BranchTableImmediate;
+
+	union immediate_type
+	{
+		// no immediate (most instructions)
+		null_immediate_type         null_immed
+		// i32.const
+		i32_immediate_type          i32_immed;
+		// i64.const
+		i64_immediate_type          i64_immed;
+		// f32.const
+		f32_immediate_type          f32_immed;
+		// f64.const
+		f64_immediate_type          f64_immed;
+		// offset: br, br_if, else (precomputed jump), call, call_indirect
+		//         get_local, set_local, tee_local, get_global, set_global
+		offset_immediate_type       offset_immed;
+		// memory immediate: i32.load (0x28) through i64.store32 (0x3e)
+		memory_immediate_type       memory_immed;
+		// block immediate (signature + precomputed jump): if, block
+		block_immediate_type        block_immed;
+		// loop (signature)
+		loop_immediate_type         loop_immed;
+		// branch table unaligned array of offset_immediate_type (native byte order)
+		// branch depths + one default depth.  
+		branch_table_immediate_type br_table_immed;
+	};
+
+	using tagged_immediate_type = std::variant<
+		null_immediate_type,
+		i32_immediate_type,
+		i64_immediate_type,
+		f32_immediate_type,
+		f64_immediate_type,
+		offset_immediate_type,
+		memory_immediate_type,
+		block_immediate_type,
+		loop_immediate_type,
+		branch_table_immediate_type
+	>;
+
+
+private:
+	template <class T>
+	struct Tag{};
+
+	void _assert_invariants() const
+	{
+		assert(opcode_exists(opcode));
+		assert(source.size() >= 1u);
+		if(not validate(null_immediate_type{}))
+			assert(source.size() > 1u);
+	}
+
+	bool validate(Tag<null_immediate_type>) const
+	{
+		_assert_invariants();
+		return ((opcode > OpCode::I32_EQZ) 
+			or (opcode == OpCode::UNREACHABLE)
+			or (opcode == OpCode::NOP)
+			or (opcode == OpCode::ELSE)
+			or (opcode == OpCode::END)
+			or (opcode == OpCode::RETURN)
+			or (opcode == OpCode::DROP)
+			or (opcode == OpCode::SELECT)
+			or (opcode == OpCode::CURRENT_MEMORY)
+			or (opcode == OpCode::GROW_MEMORY)
+		);
+	}
+	
+	bool validate(Tag<offset_immediate_type>) const
+	{
+		_assert_invariants();
+		return ((op >= OpCode::GET_LOCAL and op <= OpCode::SET_GLOBAL)
+			or (op >= OpCode::CALL and op <= OpCode::CALL_INDIRECT)
+			or (op >= OpCode::BR and op <= OpCode::BR_IF)
+			or (op == OpCode::ELSE)
+		);
+	}
+
+	bool validate(Tag<i32_immediate_type>) const
+	{
+		_assert_invariants();
+		return (opcode == OpCode::I32_CONST);
+	}
+
+	bool validate(Tag<i64_immediate_type>) const
+	{
+		_assert_invariants();
+		return (opcode == OpCode::I64_CONST);
+	}
+
+	bool validate(Tag<f32_immediate_type>) const
+	{
+		_assert_invariants();
+		return (opcode == OpCode::F32_CONST);
+	}
+
+	bool validate(Tag<f64_immediate_type>) const
+	{
+		_assert_invariants();
+		return (opcode == OpCode::F64_CONST);
+	}
+
+	bool validate(Tag<memory_immediate_type>) const
+	{
+		_assert_invariants();
+		return (opcode >= OpCode::I32_LOAD)
+			and (opcode >= OpCode::I64_STORE32);
+	}
+
+	bool validate(Tag<block_immediate_type>) const
+	{
+		_assert_invariants();
+		return (opcode == OpCode::BLOCK)
+			or (opcode == OpCode::IF);
+	}
+
+	bool validate(Tag<branch_table_immediate_type>) const
+	{
+		_assert_invariants();
+		return (opcode == OpCode::BR_TABLE);
+	}
+
+	bool validate(Tag<loop_immediate_type>) const
+	{
+		_assert_invariants();
+		return (opcode == OpCode::LOOP);
+	}
+
+	template <class T>
+	void assert_valid(Tag<T>) const
+	{
+		assert(validate(d
+	}
+
+	WasmInstruction(std::string_view src, OpCode op, const char* end_pos, null_immediate_type null_immed):
+		source(src), opcode(op), end(end_pos), raw_immediate_{null_immed}
+	{ assert_valid(Tag<null_immediate_type>{}); }
+
+	WasmInstruction(std::string_view src, OpCode op, const char* end_pos, i32_immediate_type i32_immed):
+		source(src), opcode(op), end(end_pos), raw_immediate_{i32_immed}
+	{ assert_valid(Tag<i32_immediate_type>{}); }
+
+	WasmInstruction(std::string_view src, OpCode op, const char* end_pos, i64_immediate_type i64_immed):
+		source(src), opcode(op), end(end_pos), raw_immediate_{i64_immed}
+	{ assert_valid(Tag<i64_immediate_type>{}); }
+
+	WasmInstruction(std::string_view src, OpCode op, const char* end_pos, f32_immediate_type f32_immed):
+		source(src), opcode(op), end(end_pos), raw_immediate_{f32_immed}
+	{ asser_valid(Tag<f32_immediate_type>{}); }
+
+	WasmInstruction(std::string_view src, OpCode op, const char* end_pos, f64_immediate_type f64_immed):
+		source(src), opcode(op), end(end_pos), raw_immediate_{f64_immed}
+	{ assert_valid(Tag<f64_immediate_type>{}); }
+
+	WasmInstruction(std::string_view src, OpCode op, const char* end_pos, offset_immediate_type offset_immed):
+		source(src), opcode(op), end(end_pos), raw_immediate_{offset_immed}
+	{ assert_valid(Tag<offset_immediate_type>{}); }
+
+	WasmInstruction(std::string_view src, OpCode op, const char* end_pos, loop_immediate_type loop_immed):
+		source(src), opcode(op), end(end_pos), raw_immediate_{loop_immed}
+	{ assert_valid(Tag<loop_immediate_type>{}); }
+
+	WasmInstruction(std::string_view src, OpCode op, const char* end_pos, memory_immediate_type memory_immed):
+		source(src), opcode(op), end(end_pos), raw_immediate_{memory_immed}
+	{ assert_valid(Tag<memory_immediate_type>{}); }
+
+	WasmInstruction(std::string_view src, OpCode op, const char* end_pos, block_immediate_type block_immed):
+		source(src), opcode(op), end(end_pos), raw_immediate_{block_immed}
+	{ assert_valid(Tag<loop_immediate_type>{}); }
+
+	WasmInstruction(std::string_view src, OpCode op, const char* end_pos, branch_table_immediate_type br_table_immed):
+		source(src), opcode(op), end(end_pos), raw_immediate_{br_table_immed}
+	{ assert_valid(Tag<branch_table_immediate_type>{}); }
+
+public:
+
+	const immediate_type& raw_immediate() const
+	{ return raw_immediate_; }
+
+	tagged_immediate_type tagged_immediate() const
+	{
+		// This if() covers 20-something ops.
+		if(opcode >= OpCode::I32_LOAD and opcode <= I64_STORE32)
+		{
+			return tagged_immediate_type(
+				std::in_place_type<memory_immediate_type>,
+				raw().memory_immed
+			);
+		}
+		switch(opcode)
+		{
+		// case for ops with no immediate
+		default:
+			assert(opcode_exists(static_cast<std::size_t>(opcode)));
+			return tagged_immediate_type(
+				std::in_place_type<null_immediate_type>,
+				raw().null_immed
+			);
+		// cases for block immediate
+		case OpCode::BLOCK: [[fallthrough]];
+		case OpCode::IF:
+			return tagged_immediate_type(
+				std::in_place_type<block_immediate_type>,
+				raw().block_immed
+			);
+		// cases for uint32 immediate
+		case OpCode::ELSE:          [[fallthrough]];
+		case OpCode::BR:            [[fallthrough]];
+		case OpCode::BR_IF:         [[fallthrough]];
+		case OpCode::CALL:          [[fallthrough]];
+		case OpCode::CALL_INDIRECT: [[fallthrough]];
+		case OpCode::GET_LOCAL:     [[fallthrough]];
+		case OpCode::SET_LOCAL:     [[fallthrough]];
+		case OpCode::TEE_LOCAL:     [[fallthrough]];
+		case OpCode::GET_GLOBAL:    [[fallthrough]];
+		case OpCode::SET_GLOBAL:
+			return tagged_immediate_type(
+				std::in_place_type<offset_immediate_type>,
+				raw().offset_immed
+			);
+		// case for loop immediate
+		case OpCode::LOOP:
+			return tagged_immediate_type(
+				std::in_place_type<loop_immediate_type>,
+				raw().loop_immed
+			);
+		// case for loop immediate
+		case OpCode::LOOP:
+			return tagged_immediate_type(
+				std::in_place_type<loop_immediate_type>,
+				raw().loop_immed
+			);
+		// case for br_table immediate
+		case OpCode::BR_TABLE:
+			return tagged_immediate_type(
+				std::in_place_type<branch_table_immediate_type>,
+				raw().br_table_immed
+			);
+		// case for i32.const immediate
+		case OpCode::I32_CONST:
+			return tagged_immediate_type(
+				std::in_place_type<i32_immediate_type>,
+				raw().i32_immed
+			);
+		// case for i64.const immediate
+		case OpCode::I64_CONST:
+			return tagged_immediate_type(
+				std::in_place_type<i64_immediate_type>,
+				raw().i64_immed
+			);
+		// case for f32.const immediate
+		case OpCode::F32_CONST:
+			return tagged_immediate_type(
+				std::in_place_type<f32_immediate_type>,
+				raw().f32_immed
+			);
+		// case for f64.const immediate
+		case OpCode::F64_CONST:
+			return tagged_immediate_type(
+				std::in_place_type<f64_immediate_type>,
+				raw().f64_immed
+			);
+		}
+		assert(false);
+	}
+
+	
+	OpCode opcode() const
+	{ return opcode_; }
+
+	std::string_view source() const
+	{ return source_; }
+
+	std::string_view full_source() const
+	{ return std::string_view(source().data(), end_ - source().data()); }
+
+	const char* end_pos() const
+	{ return end_; }
+
+	template <class CallStackType>
+	WasmInstruction execute(WasmModule& module, CallStackType& call_stack) 
+	{
+		switch(opcode)
+		{
+		case OpCode::UNREACHABLE:
+			assert_valid(Tag<null_immediate_type>{});
+			op_func<OpCode::UNREACHABLE>();
+			break;
+		case OpCode::NOP:
+			assert_valid(Tag<null_immediate_type>{});
+			op_func<OpCode::NOP>();
+			break;
+		case OpCode::BLOCK:
+			assert_valid(Tag<block_immediate_type>{});
+			op_func<OpCode::BLOCK>();
+			break;
+		case OpCode::LOOP:
+			assert_valid(Tag<loop_immediate_type>{});
+			op_func<OpCode::LOOP>();
+			break;
+		case OpCode::IF:
+			assert_valid(Tag<block_immediate_type>{});
+			op_func<OpCode::IF>();
+			break;
+		case OpCode::ELSE:
+			assert_valid(Tag<offset_immediate_type>{});
+			op_func<OpCode::ELSE>();
+			break;
+		case OpCode::END:
+			assert_valid(Tag<null_immediate_type>{});
+			op_func<OpCode::END>();
+			break;
+		case OpCode::BR:
+			assert_valid(Tag<offset_immediate_type>{});
+			op_func<OpCode::BR>();
+			break;
+		case OpCode::BR_IF:
+			assert_valid(Tag<offset_immediate_type>{});
+			op_func<OpCode::BR_IF>();
+			break;
+		case OpCode::BR_TABLE:
+			assert_valid(Tag<branch_table_immediate_type>{});
+			op_func<OpCode::BR_TABLE>();
+			break;
+		case OpCode::RETURN:
+			assert_valid(Tag<null_immediate_type>{});
+			op_func<OpCode::RETURN>();
+			break;
+		case OpCode::CALL:
+			assert_valid(Tag<offset_immediate_type>{});
+			op_func<OpCode::CALL>();
+			break;
+		case OpCode::CALL_INDIRECT:
+			assert_valid(Tag<offset_immediate_type>{});
+			op_func<OpCode::CALL_INDIRECT>();
+			break;
+		case OpCode::DROP:
+			assert_valid(Tag<null_immediate_type>{});
+			op_func<OpCode::DROP>(current_frame(call_stack));
+			break;
+		case OpCode::SELECT:
+			assert_valid(Tag<null_immediate_type>{});
+			op_func<OpCode::SELECT>(current_frame(call_stack));
+			break;
+		case OpCode::GET_LOCAL:
+			assert_valid(Tag<offset_immediate_type>{});
+			op_func<OpCode::GET_LOCAL>(
+				current_frame(call_stack), raw_immediate().offset_immed, 
+			);
+			break;
+		case OpCode::SET_LOCAL:
+			assert_valid(Tag<offset_immediate_type>{});
+			op_func<OpCode::SET_LOCAL>(
+				current_frame(call_stack), raw_immediate().offset_immed, 
+			);
+			break;
+		case OpCode::TEE_LOCAL:
+			assert_valid(Tag<offset_immediate_type>{});
+			op_func<OpCode::TEE_LOCAL>(
+				current_frame(call_stack), raw_immediate().offset_immed
+			);
+			break;
+		case OpCode::GET_GLOBAL:
+			assert_valid(Tag<offset_immediate_type>{});
+			op_func<OpCode::GET_GLOBAL>(
+				current_frame(call_stack), module, raw_immediate().offset_immed, 
+			);
+			break;
+		case OpCode::SET_GLOBAL:
+			assert_valid(Tag<offset_immediate_type>{});
+			op_func<OpCode::SET_GLOBAL>(
+				current_frame(call_stack), module, raw_immediate().offset_immed, 
+			);
+			break;
+
+		/// MEMORY OPS
+		// load
+		case OpCode::I32_LOAD:
+			assert_valid(Tag<memory_immediate_type>{});
+			const auto& immed = raw_immediate().memory_immed;
+			op_func<OpCode::I32_LOAD>(
+				current_frame(call_stack), module, flags(immed), offset(immed)
+			);
+			break;
+		case OpCode::I64_LOAD:
+			assert_valid(Tag<memory_immediate_type>{});
+			const auto& immed = raw_immediate().memory_immed;
+			op_func<OpCode::I64_LOAD>(
+				current_frame(call_stack), module, flags(immed), offset(immed)
+			);
+			break;
+		case OpCode::F32_LOAD:
+			assert_valid(Tag<memory_immediate_type>{});
+			const auto& immed = raw_immediate().memory_immed;
+			op_func<OpCode::F32_LOAD>(
+				current_frame(call_stack), module, flags(immed), offset(immed)
+			);
+			break;
+		case OpCode::F64_LOAD:
+			assert_valid(Tag<memory_immediate_type>{});
+			const auto& immed = raw_immediate().memory_immed;
+			op_func<OpCode::F64_LOAD>(
+				current_frame(call_stack), module, flags(immed), offset(immed)
+			);
+			break;
+		// i32 extending loads
+		case OpCode::I32_LOAD8_S:
+			assert_valid(Tag<memory_immediate_type>{});
+			const auto& immed = raw_immediate().memory_immed;
+			op_func<OpCode::I32_LOAD8_S>(
+				current_frame(call_stack), module, flags(immed), offset(immed)
+			);
+			break;
+		case OpCode::I32_LOAD8_U:
+			assert_valid(Tag<memory_immediate_type>{});
+			const auto& immed = raw_immediate().memory_immed;
+			op_func<OpCode::I32_LOAD8_U>(
+				current_frame(call_stack), module, flags(immed), offset(immed)
+			);
+			break;
+		case OpCode::I32_LOAD16_S:
+			assert_valid(Tag<memory_immediate_type>{});
+			const auto& immed = raw_immediate().memory_immed;
+			op_func<OpCode::I32_LOAD16_S>(
+				current_frame(call_stack), module, flags(immed), offset(immed)
+			);
+			break;
+		case OpCode::I32_LOAD16_U:
+			assert_valid(Tag<memory_immediate_type>{});
+			const auto& immed = raw_immediate().memory_immed;
+			op_func<OpCode::I32_LOAD16_U>(
+				current_frame(call_stack), module, flags(immed), offset(immed)
+			);
+			break;
+		// i64 extending loads
+		case OpCode::I64_LOAD8_S:
+			assert_valid(Tag<memory_immediate_type>{});
+			const auto& immed = raw_immediate().memory_immed;
+			op_func<OpCode::I64_LOAD8_S>(
+				current_frame(call_stack), module, flags(immed), offset(immed)
+			);
+			break;
+		case OpCode::I64_LOAD8_U:
+			assert_valid(Tag<memory_immediate_type>{});
+			const auto& immed = raw_immediate().memory_immed;
+			op_func<OpCode::I64_LOAD8_U>(
+				current_frame(call_stack), module, flags(immed), offset(immed)
+			);
+			break;
+		case OpCode::I64_LOAD16_S:
+			assert_valid(Tag<memory_immediate_type>{});
+			const auto& immed = raw_immediate().memory_immed;
+			op_func<OpCode::I64_LOAD16_S>(
+				current_frame(call_stack), module, flags(immed), offset(immed)
+			);
+			break;
+		case OpCode::I64_LOAD16_U:
+			assert_valid(Tag<memory_immediate_type>{});
+			const auto& immed = raw_immediate().memory_immed;
+			op_func<OpCode::I64_LOAD16_U>(
+				current_frame(call_stack), module, flags(immed), offset(immed)
+			);
+			break;
+		case OpCode::I64_LOAD32_S:
+			assert_valid(Tag<memory_immediate_type>{});
+			const auto& immed = raw_immediate().memory_immed;
+			op_func<OpCode::I64_LOAD32_S>(
+				current_frame(call_stack), module, flags(immed), offset(immed)
+			);
+			break;
+		case OpCode::I64_LOAD32_U:
+			assert_valid(Tag<memory_immediate_type>{});
+			const auto& immed = raw_immediate().memory_immed;
+			op_func<OpCode::I64_LOAD32_U>(
+				current_frame(call_stack), module, flags(immed), offset(immed)
+			);
+			break;
+		// store
+		case OpCode::I32_STORE:
+			assert_valid(Tag<memory_immediate_type>{});
+			const auto& immed = raw_immediate().memory_immed;
+			op_func<OpCode::I32_STORE>(
+				current_frame(call_stack), module, flags(immed), offset(immed)
+			);
+			break;
+		case OpCode::I64_STORE:
+			assert_valid(Tag<memory_immediate_type>{});
+			const auto& immed = raw_immediate().memory_immed;
+			op_func<OpCode::I64_STORE>(
+				current_frame(call_stack), module, flags(immed), offset(immed)
+			);
+			break;
+		case OpCode::F32_STORE:
+			assert_valid(Tag<memory_immediate_type>{});
+			const auto& immed = raw_immediate().memory_immed;
+			op_func<OpCode::F32_STORE>(
+				current_frame(call_stack), module, flags(immed), offset(immed)
+			);
+			break;
+		case OpCode::F64_STORE:
+			assert_valid(Tag<memory_immediate_type>{});
+			const auto& immed = raw_immediate().memory_immed;
+			op_func<OpCode::F64_STORE>(
+				current_frame(call_stack), module, flags(immed), offset(immed)
+			);
+			break;
+		// i32 wrapping stores 
+		case OpCode::I32_STORE8:
+			assert_valid(Tag<memory_immediate_type>{});
+			const auto& immed = raw_immediate().memory_immed;
+			op_func<OpCode::I32_STORE8>(
+				current_frame(call_stack), module, flags(immed), offset(immed)
+			);
+			break;
+		case OpCode::I32_STORE16:
+			assert_valid(Tag<memory_immediate_type>{});
+			const auto& immed = raw_immediate().memory_immed;
+			op_func<OpCode::I32_STORE16>(
+				current_frame(call_stack), module, flags(immed), offset(immed)
+			);
+			break;
+		// i64 wrapping stores 
+		case OpCode::I64_STORE8:
+			assert_valid(Tag<memory_immediate_type>{});
+			const auto& immed = raw_immediate().memory_immed;
+			op_func<OpCode::I64_STORE8>(
+				current_frame(call_stack), module, flags(immed), offset(immed)
+			);
+			break;
+		case OpCode::I64_STORE16:
+			assert_valid(Tag<memory_immediate_type>{});
+			const auto& immed = raw_immediate().memory_immed;
+			op_func<OpCode::I64_STORE16>(
+				current_frame(call_stack), module, flags(immed), offset(immed)
+			);
+			break;
+		case OpCode::I64_STORE32:
+			assert_valid(Tag<memory_immediate_type>{});
+			const auto& immed = raw_immediate().memory_immed;
+			op_func<OpCode::I64_STORE32>(
+				current_frame(call_stack), module, flags(immed), offset(immed)
+			);
+			break;
+		// misc
+		case OpCode::CURRENT_MEMORY:
+			assert_valid(Tag<null_immediate_type>{});
+			op_func<OpCode::CURRENT_MEMORY>(current_frame(call_stack), module);
+			break;
+		case OpCode::GROW_MEMORY:
+			assert_valid(Tag<null_immediate_type>{});
+			op_func<OpCode::GROW_MEMORY>(current_frame(call_stack), module);
+			break;
+		/// CONST OPERATIONS
+		case OpCode::I32_CONST:
+			assert_valid(Tag<i32_immediate_type>{});
+			op_func<OpCode::I32_CONST>(current_frame(call_stack), raw_immediate().i32_immed);
+			break;
+		case OpCode::I64_CONST:
+			assert_valid(Tag<i64_immediate_type>{});
+			op_func<OpCode::I64_CONST>(current_frame(call_stack), raw_immediate().i64_immed);
+			break;
+		case OpCode::F32_CONST:
+			assert_valid(Tag<f32_immediate_type>{});
+			op_func<OpCode::F32_CONST>(current_frame(call_stack), raw_immediate().f32_immed);
+			break;
+		case OpCode::F64_CONST:
+			assert_valid(Tag<f64_immediate_type>{});
+			op_func<OpCode::F64_CONST>(current_frame(call_stack), raw_immediate().f32_immed);
+			break;
+		/// COMPARISON OPERATIONS
+		// i32 comparisons
+		case OpCode::I32_EQZ:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_EQZ>(current_frame(call_stack));
+			break;
+		case OpCode::I32_EQ:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_EQ>(current_frame(call_stack));
+			break;
+		case OpCode::I32_NE:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_NE>(current_frame(call_stack));
+			break;
+		case OpCode::I32_LT_S:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_LT_S>(current_frame(call_stack));
+			break;
+		case OpCode::I32_LT_U:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_LT_U>(current_frame(call_stack));
+			break;
+		case OpCode::I32_GT_S:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_GT_S>(current_frame(call_stack));
+			break;
+		case OpCode::I32_GT_U:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_GT_U>(current_frame(call_stack));
+			break;
+		case OpCode::I32_LE_S:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_LE_S>(current_frame(call_stack));
+			break;
+		case OpCode::I32_LE_U:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_LE_U>(current_frame(call_stack));
+			break;
+		case OpCode::I32_GE_S:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_GE_S>(current_frame(call_stack));
+			break;
+		case OpCode::I32_GE_U:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_GE_U>(current_frame(call_stack));
+			break;
+		// i64 comparisons
+		case OpCode::I64_EQZ:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_EQZ>(current_frame(call_stack));
+			break;
+		case OpCode::I64_EQ:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_EQ>(current_frame(call_stack));
+			break;
+		case OpCode::I64_NE:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_NE>(current_frame(call_stack));
+			break;
+		case OpCode::I64_LT_S:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_LT_S>(current_frame(call_stack));
+			break;
+		case OpCode::I64_LT_U:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_LT_U>(current_frame(call_stack));
+			break;
+		case OpCode::I64_GT_S:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_GT_S>(current_frame(call_stack));
+			break;
+		case OpCode::I64_GT_U:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_GT_U>(current_frame(call_stack));
+			break;
+		case OpCode::I64_LE_S:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_LE_S>(current_frame(call_stack));
+			break;
+		case OpCode::I64_LE_U:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_LE_U>(current_frame(call_stack));
+			break;
+		case OpCode::I64_GE_S:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_GE_S>(current_frame(call_stack));
+			break;
+		case OpCode::I64_GE_U:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_GE_U>(current_frame(call_stack));
+			break;
+		// f32 comparisons
+		case OpCode::F32_EQ:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F32_EQ>(current_frame(call_stack));
+			break;
+		case OpCode::F32_NE:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F32_NE>(current_frame(call_stack));
+			break;
+		case OpCode::F32_LT:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F32_LT>(current_frame(call_stack));
+			break;
+		case OpCode::F32_GT:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F32_GT>(current_frame(call_stack));
+			break;
+		case OpCode::F32_LE:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F32_LE>(current_frame(call_stack));
+			break;
+		case OpCode::F32_GE:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F32_GE>(current_frame(call_stack));
+			break;
+		// f64 comparisons
+		case OpCode::F64_EQ:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F64_EQ>(current_frame(call_stack));
+			break;
+		case OpCode::F64_NE:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F64_NE>(current_frame(call_stack));
+			break;
+		case OpCode::F64_LT:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F64_LT>(current_frame(call_stack));
+			break;
+		case OpCode::F64_GT:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F64_GT>(current_frame(call_stack));
+			break;
+		case OpCode::F64_LE:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F64_LE>(current_frame(call_stack));
+			break;
+		case OpCode::F64_GE:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F64_GE>(current_frame(call_stack));
+			break;
+		/// NUMERIC OPERATIONS
+		// i32 operations
+		case OpCode::I32_CLZ:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_CLZ>();
+			break;
+		case OpCode::I32_CTZ:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_CTZ>();
+			break;
+		case OpCode::I32_POPCNT:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_POPCNT>();
+			break;
+		case OpCode::I32_ADD:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_ADD>();
+			break;
+		case OpCode::I32_SUB:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_SUB>();
+			break;
+		case OpCode::I32_MUL:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_MUL>();
+			break;
+		case OpCode::I32_DIV_S:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_DIV_S>();
+			break;
+		case OpCode::I32_DIV_U:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_DIV_U>();
+			break;
+		case OpCode::I32_REM_S:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_REM_S>();
+			break;
+		case OpCode::I32_REM_U:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_REM_U>();
+			break;
+		case OpCode::I32_AND:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_AND>();
+			break;
+		case OpCode::I32_OR:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_OR>();
+			break;
+		case OpCode::I32_XOR:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_XOR>();
+			break;
+		case OpCode::I32_SHL:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_SHL>();
+			break;
+		case OpCode::I32_SHR_S:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_SHR_S>();
+			break;
+		case OpCode::I32_SHR_U:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_SHR_U>();
+			break;
+		case OpCode::I32_ROTL:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_ROTL>();
+			break;
+		case OpCode::I32_ROTR:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_ROTR>();
+			break;
+		// i64 operations
+		case OpCode::I64_CLZ:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_CLZ>();
+			break;
+		case OpCode::I64_CTZ:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_CTZ>();
+			break;
+		case OpCode::I64_POPCNT:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_POPCNT>();
+			break;
+		case OpCode::I64_ADD:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_ADD>();
+			break;
+		case OpCode::I64_SUB:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_SUB>();
+			break;
+		case OpCode::I64_MUL:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_MUL>();
+			break;
+		case OpCode::I64_DIV_S:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_DIV_S>();
+			break;
+		case OpCode::I64_DIV_U:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_DIV_U>();
+			break;
+		case OpCode::I64_REM_S:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_REM_S>();
+			break;
+		case OpCode::I64_REM_U:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_REM_U>();
+			break;
+		case OpCode::I64_AND:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_AND>();
+			break;
+		case OpCode::I64_OR:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_OR>();
+			break;
+		case OpCode::I64_XOR:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_XOR>();
+			break;
+		case OpCode::I64_SHL:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_SHL>();
+			break;
+		case OpCode::I64_SHR_S:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_SHR_S>();
+			break;
+		case OpCode::I64_SHR_U:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_SHR_U>();
+			break;
+		case OpCode::I64_ROTL:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_ROTL>();
+			break;
+		case OpCode::I64_ROTR:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_ROTR>();
+			break;
+		// f32 operations
+		case OpCode::F32_ABS:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F32_ABS>();
+			break;
+		case OpCode::F32_NEG:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F32_NEG>();
+			break;
+		case OpCode::F32_CEIL:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F32_CEIL>();
+			break;
+		case OpCode::F32_FLOOR:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F32_FLOOR>();
+			break;
+		case OpCode::F32_TRUNC:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F32_TRUNC>();
+			break;
+		case OpCode::F32_NEAREST:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F32_NEAREST>();
+			break;
+		case OpCode::F32_SQRT:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F32_SQRT>();
+			break;
+		case OpCode::F32_ADD:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F32_ADD>();
+			break;
+		case OpCode::F32_SUB:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F32_SUB>();
+			break;
+		case OpCode::F32_MUL:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F32_MUL>();
+			break;
+		case OpCode::F32_DIV:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F32_DIV>();
+			break;
+		case OpCode::F32_MIN:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F32_MIN>();
+			break;
+		case OpCode::F32_MAX:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F32_MAX>();
+			break;
+		case OpCode::F32_COPYSIGN:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F32_COPYSIGN>();
+			break;
+		// f64 operations
+		case OpCode::F64_ABS:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F64_ABS>();
+			break;
+		case OpCode::F64_NEG:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F64_NEG>();
+			break;
+		case OpCode::F64_CEIL:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F64_CEIL>();
+			break;
+		case OpCode::F64_FLOOR:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F64_FLOOR>();
+			break;
+		case OpCode::F64_TRUNC:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F64_TRUNC>();
+			break;
+		case OpCode::F64_NEAREST:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F64_NEAREST>();
+			break;
+		case OpCode::F64_SQRT:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F64_SQRT>();
+			break;
+		case OpCode::F64_ADD:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F64_ADD>();
+			break;
+		case OpCode::F64_SUB:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F64_SUB>();
+			break;
+		case OpCode::F64_MUL:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F64_MUL>();
+			break;
+		case OpCode::F64_DIV:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F64_DIV>();
+			break;
+		case OpCode::F64_MIN:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F64_MIN>();
+			break;
+		case OpCode::F64_MAX:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F64_MAX>();
+			break;
+		case OpCode::F64_COPYSIGN:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F64_COPYSIGN>();
+			break;
+		/// CONVERSION OPERATIONS
+		case OpCode::I32_WRAP_I64:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_WRAP_I64>();
+			break;
+		// float-to-int32 tuncating conversion
+		case OpCode::I32_TRUNC_S_F32:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_TRUNC_S_F32>();
+			break;
+		case OpCode::I32_TRUNC_U_F32:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_TRUNC_U_F32>();
+			break;
+		case OpCode::I32_TRUNC_S_F64:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_TRUNC_S_F64>();
+			break;
+		case OpCode::I32_TRUNC_U_F64:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I32_TRUNC_U_F64>();
+			break;
+		// int32-to-int64 extending conversion
+		case OpCode::I64_EXTEND_S_I32:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_EXTEND_S_I32>();
+			break;
+		case OpCode::I64_EXTEND_U_I32:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_EXTEND_U_I32>();
+			break;
+		// float-to-int64 truncating conversion
+		case OpCode::I64_TRUNC_S_F32:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_TRUNC_S_F32>();
+			break;
+		case OpCode::I64_TRUNC_U_F32:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_TRUNC_U_F32>();
+			break;
+		case OpCode::I64_TRUNC_S_F64:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_TRUNC_S_F64>();
+			break;
+		case OpCode::I64_TRUNC_U_F64:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::I64_TRUNC_U_F64>();
+			break;
+		// int-to-float32 conversion
+		case OpCode::F32_CONVERT_S_I32:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F32_CONVERT_S_I32>();
+			break;
+		case OpCode::F32_CONVERT_U_I32:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F32_CONVERT_U_I32>();
+			break;
+		case OpCode::F32_CONVERT_S_I64:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F32_CONVERT_S_I64>();
+			break;
+		case OpCode::F32_CONVERT_U_I64:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F32_CONVERT_U_I64>();
+			break;
+		// float64-to-float32 demoting conversion
+		case OpCode::F32_DEMOTE_F64:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F32_DEMOTE_F64>();
+			break;
+		// int-to-float64 conversion
+		case OpCode::F64_CONVERT_S_I32:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F64_CONVERT_S_I32>();
+			break;
+		case OpCode::F64_CONVERT_U_I32:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F64_CONVERT_U_I32>();
+			break;
+		case OpCode::F64_CONVERT_S_I64:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F64_CONVERT_S_I64>();
+			break;
+		case OpCode::F64_CONVERT_U_I64:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F64_CONVERT_U_I64>();
+			break;
+		// float32-to-float64 promoting conversion
+		case OpCode::F64_PROMOTE_F32:
+			assert_valid(Tag<null_immediate_tag>{});
+			op_func<OpCode::F64_PROMOTE_F32>();
+			break;
+		}
+	}
+	
+	
+	
+private:
+	
+	void _assert_invariants() const
+	{
+		assert(opcode_exists(opcode()));
+		assert(end_pos() > source().data());
+		assert(source().size() > 0u);
+		std::visit(
+			[](const auto& immed) {
+				using immed_type = std::decay_t<decltype(immed)>;
+				assert(validate(Tag<immed_type>{}));
+			},
+			tagged_immediate()
+		);
+		
+	}
+
+	std::pair<CodeView, const char*> jump_over_if() const
+	{
+		assert_valid(Tag<block_immediate_type>{});
+		assert(opcode() == OpCode::IF);
+		wasm_uint32_t ofs = raw_immediate().block_immed;
+		assert(ofs > 0u);
+		assert(end_pos() > source().data());
+		auto dist = static_cast<std::size_t>(end_pos() - source().data());
+		assert(ofs < dist);
+		auto dest_pos = source().data() + ofs;
+		constexpr auto end_op = static_cast<unsigned char>(OpCode::END);
+		constexpr auto else_op = static_cast<unsigned char>(OpCode::ELSE);
+		if(dest_pos[-1] == end_op)
+		{
+			return std::make_pair(CodeView(dest_pos, end_pos()), nullptr);
+		}
+		else 
+		{
+			assert(dest_pos[-(1 + static_cast<std::ptrdiff_t>(sizeof(ofs)))] == else_op);
+			auto else_pos = dest_pos - (1 + static_cast<std::ptrdiff_t>(sizeof(ofs)));
+			std::memcpy(&ofs, else_pos + 1, sizeof(ofs));
+			return std::make_pair(CodeView(dest_pos, end_pos()), else_pos + ofs);
+		}
+	}
+
+	CodeView branch_to(const char* pos) const
+	{
+		assert(pos[-1] == static_cast<char>(OpCode::END));
+		assert(pos > source().data());
+		assert(pos < end_pos());
+		return CodeView(pos, end_pos());
+	}
+
+	CodeView jump_over_else() const
+	{
+		assert_valid(Tag<offset_immediate_tag>{});
+		assert(opcode() == OpCode::ELSE);
+		wasm_uint32_t ofs = raw_immediate().block_immed;
+		assert(ofs > 0u);
+		assert(end_pos() > source().data());
+		auto dist = static_cast<std::size_t>(end_pos() - source().data());
+		assert(ofs < dist);
+		auto dest_pos = source().data() + ofs;
+		assert(dest_pos[-1] == static_cast<char>(OpCode::END));
+		return CodeView(dest_pos, end_pos());
+	}
+
+	CodeView remaining_code() {
+		assert(source().end() < end_pos());
+		assert(opcode() != OpCode::IF);
+		assert(opcode() != OpCode::ELSE);
+		assert(opcode() != OpCode::BR);
+		assert(opcode() != OpCode::BR_IF);
+		assert(opcode() != OpCode::BR_TABLE);
+		return CodeView(source().end(), end_pos());
+	}
+
+	/// Byte sequence from which this instruction was decoded.
+	const std::string_view source_;
+	/// Opcode for this instruction.
+	const OpCode opcode_;
+	/// Past-the-end pointer into the code from which this instruction was decoded
+	const char* const end_;
+	/// Raw union of possible immediate operand alternatives, discriminated by 'this->opcode'.
+	const immediate_type raw_immediate_;
+};
+
+struct CodeView
+{
+	struct Iterator;
+	using value_type = WasmInstruction;
+	using pointer = WasmInstruction*;
+	using const_pointer = const WasmInstruction*;
+	using reference = WasmInstruction&;
+	using const_reference = WasmInstruction&;
+	using size_type = std::string_view::size_type;
+	using difference_type = std::string_view::difference_type;
+	using iterator = Iterator;
+	using const_iterator = iterator;
+
+private:
+
+	struct InstructionVisitor {
+
+		template <class ... T>
+		WasmInstruction operator()(
+			const char* first,
+			const char* last,
+			const char* pos,
+			OpCode op,
+			T&& ... args
+		)
+		{
+			assert(first < pos);
+			assert(pos <= last);
+			return make_instr(
+				std::string_view(first, pos - first),
+				op,
+				last,
+				std::forward<T>(args)...
+			);
+		}
+
+	private:
+		// Overload for instructions with immediate operands
+		WasmInstruction make_instr(std::string_view view, OpCode op, const char* last)
+		{ return WasmInstruction(view, op, last, std::monostate()); }
+
+		template <
+			class T,
+			/* enable overloads for the simple alternatives. */
+			class = std::enable_if_t<
+				std::disjunction_v<
+					std::is_same_v<std::decay_t<T>, wasm_uint32_t>,
+					std::is_same_v<std::decay_t<T>, wasm_sint32_t>,
+					std::is_same_v<std::decay_t<T>, wasm_sint64_t>,
+					std::is_same_v<std::decay_t<T>, wasm_float32_t>,
+					std::is_same_v<std::decay_t<T>, wasm_float64_t>
+				>
+			>
+		>
+		WasmInstruction make_instr(std::string_view view, OpCode op, const char* last, T&& arg)
+		{ return WasmInstruction(view, op, last, std::forward<T>(arg)); }
+
+		/// Loop overload
+		WasmInstruction make_instr(std::string_view view, OpCode op, const char* last, LanguageType tp)
+		{ return WasmInstruction(view, op, last, tp); }
+
+		/// Branch table overload
+		WasmInstruction make_instr(std::string_view view, OpCode op, const char* last, const char* base, wasm_uint32_t len)
+		{
+			assert(last > base);
+			std::size_t byte_count = base - last;
+			std::size_t bytes_needed = sizeof(wasm_uint32_t) * (len + 1u);
+			assert(byte_count >= bytes_needed);
+			// the table and 'view' should end at the same byte address
+			assert(view.data() + view.size() == (base + (len + 1u) * sizeof(wasm_uint32_t)));
+			using buffer_type = const char[sizeof(wasm_uint32_t)];
+			auto table = gsl::span<buffer_type>(reinterpret_cast<buffer_type*>(base), len + 1u);
+			return WasmInstruction(view, op, last, table);
+		}
+
+		/// Block overload
+		WasmInstruction make_instr(std::string_view view, OpCode op, const char* last, LanguageType tp, wasm_uint32_t label)
+		{ return WasmInstruction(view, op, last, BlockImmediate(tp, label)); }
+
+		/// Memory overload
+		WasmInstruction make_instr(std::string_view view, OpCode op, const char* last, wasm_uint32_t flags, wasm_uint32_t offset)
+		{ return WasmInstruction(view, op, last, MemoryImmediate(flags, offset)); }
+
+		/// Invalid opcode overload
+		[[noreturn]]
+		WasmInstruction make_instr(std::string_view, OpCode, const char*, const BadOpCodeError& err)
+		{ throw err; }
+
+	};
+
+public:
+	
+	struct Iterator {
+		using value_type = CodeView::value_type;
+		using difference_type = CodeView::difference_type;
+		using pointer = CodeView::pointer;
+		using reference = CodeView::value_type;
+		using iterator_category = std::input_iterator_tag;
+		
+		friend bool operator==(const Iterator& left, const Iterator& right)
+		{ return left.code_ == right.code_; }
+		
+		friend bool operator!=(const Iterator& left, const Iterator& right)
+		{ return not (left == right); }
+		
+		
+	private:
+		gsl::not_null<CodeView*> code_;
+	};
+
+	CodeView(const WasmFunction& func):
+		code_(code(func))
+	{
+		
+	}
+
+	
+	
+
+	OpCode current_op() const
+	{
+		assert(ready());
+		return static_cast<WasmInstruction>(code_.front());
+	}
+	
+	bool done() const
+	{ return not code_.empty(); }
+
+	WasmInstruction next_instruction() const
+	{
+		assert(ready());
+		return visit_opcode(InstructionVisitor{}, code_.data(), code_.data() + code_.size());
+	}
+
+	void advance(const WasmInstruction& instr)
+	{
+		assert(not done());
+		assert(instr.source.data() == code_.data());
+		instr._assert_invariants();
+		assert(instr.source.size() <= code_.size());
+		code.remove_prefix(instr.source.size());
+	}
+
+	bool ready() const
+	{
+		if(done())
+			return false;
+		assert(opcode_exists(code_.front()));
+		return true;
+	}
+	std::string_view code_;
+};
+
 
 } /* namespace opc */
 } /* namespace wasm */

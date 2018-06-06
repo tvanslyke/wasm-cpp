@@ -9,6 +9,7 @@ namespace wasm {
 
 struct TableFunction:
 	private std::variant<
+		std::monostate,
 		const WasmFunction* const*,
 		std::function<void(gsl::span<const WasmValue>, gsl::span<WasmValue>)>
 	>
@@ -22,13 +23,20 @@ struct TableFunction:
 
 	using variant_type::variant_type;
 
-	TableFunction() = delete;
+	TableFunction() = default;
 
 	TableFunction(const TableFunction&) = default;
 	TableFunction(TableFunction&&) = default;
 		
 	TableFunction& operator=(const TableFunction&) = default;
 	TableFunction& operator=(TableFunction&&) = default;
+
+	void emplace_wasm_function(wasm_function_type* func)
+	{ as_variant.emplace<wasm_function_type*>(func); }
+
+	template <class ... Args>
+	void emplace_c_function(Args&& ... args)
+	{ as_variant().emplace<c_function_type>(std::forward<Args>(args)...); }
 
 	bool holds_wasm_function() const
 	{ return std::holds_alternative<wasm_function_type*>(as_variant()); }
@@ -54,6 +62,7 @@ struct TableFunction:
 		return std::get<c_function_type>(as_variant());
 	}
 
+	
 private:
 	variant_type& as_variant()
 	{ return static_cast<variant_type&>(*this); }
@@ -62,6 +71,7 @@ private:
 	{ return static_cast<const variant_type&>(*this); }
 
 };
+
 
 } /* namespace wasm */
 

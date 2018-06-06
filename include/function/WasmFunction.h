@@ -7,6 +7,7 @@ namespace wasm {
 
 struct WasmFunction
 {
+	using wasm_external_kind_type = WasmFunctionSignature;
 	using opcode_type = wasm::opc::OpCode;
 	using string_type = std::basic_string<opcode_type>;
 	using code_view_type = std::basic_string_view<opcode_type>;
@@ -53,6 +54,10 @@ auto param_count(const WasmFunction& f)
 
 auto locals_count(const WasmFunction& f) 
 { return locals(f).size(); }
+
+bool matches(const WasmFunction& f, const WasmFunctionSignature& sig)
+{ return signature(f) == sig; }
+
 
 std::ostream& operator<<(std::ostream& os, const WasmFunction& f)
 {

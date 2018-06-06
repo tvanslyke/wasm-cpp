@@ -6,24 +6,59 @@
 #include <cstring>
 #include <algorithm>
 
-inline bool is_big_endian()
+namespace wasm {
+
+inline bool system_is_little_endian()
 {
-	static_assert(CHAR_BIT == 8);
-	union {
-		std::uint_least32_t integer;
-		char bytes[4];
-	} value;
-	value.integer = 0x01020304;
-	return value.bytes[0] == 1; 
+	std::uintmax_t one = 1u;
+	alignas(std::uintmax_t) char buff[sizeof(std::uintmax_t)];
+	std::memcpy(buff, &one, sizeof(one));
+	return buff[0] == 1;
 }
 
 template <class T>
-void byte_swap(T& value)
+T byte_swap(T value)
 {
-	char bytes[sizeof(value)];
-	std::memcpy(bytes, &value, sizeof(value));
-	std::reverse(bytes, bytes + sizeof(value));
-	std::memcpy(&value, bytes, sizeof(value));
+	static_assert(std::is_trivially_copyable_v<T>);
+	if constexpr(sizeof(value) == 1)
+	{
+		return value;
+	}
+#ifdef __GNUC__
+	// clang code generation is better when using __builtin_bswap
+	else if constexpr(sizeof(value) == sizeof(std::uint16_t))
+	{
+		std::uint16_t tmp;
+		std::memcpy(&tmp, &value, sizeof(tmp));
+		tmp = __builtin_bswap16(tmp);
+		std::memcpy(&value, &tmp, sizeof(tmp));
+		return value;
+	}
+	else if constexpr(sizeof(value) == sizeof(std::uint32_t))
+	{
+		std::uint32_t tmp;
+		std::memcpy(&tmp, &value, sizeof(tmp));
+		tmp = __builtin_bswap32(tmp);
+		std::memcpy(&value, &tmp, sizeof(tmp));
+		return value;
+	}
+	else if constexpr(sizeof(value) == sizeof(std::uint64_t))
+	{
+		std::uint64_t tmp;
+		std::memcpy(&tmp, &value, sizeof(tmp));
+		tmp = __builtin_bswap64(tmp);
+		std::memcpy(&value, &tmp, sizeof(tmp));
+		return value;
+	}
+#endif /* __GNUC__ */
+	else
+	{
+		alignas(alignof(value)) char buff[sizeof(value)];
+		std::memcpy(bytes, &value, sizeof(value));
+		std::reverse(bytes, bytes + sizeof(value));
+		std::memcpy(&value, bytes, sizeof(value));
+		return value;
+	}
 }
 
 template <bool Signed, class SrcCharT, class DestCharT>
@@ -87,5 +122,7 @@ Integer be_to_system(Integer value)
 	}
 	return value;
 }
+
+} /* namespace wasm */
 
 #endif /* UTILITIES_ENDIANNESS_H */

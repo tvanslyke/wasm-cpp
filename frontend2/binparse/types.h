@@ -271,19 +271,19 @@ std::ostream& wasm::parse::operator<<(std::ostream& os, const ExportEntry& ent)
 
 struct wasm::parse::ElemSegment {
 	using variant_t = std::variant<std::int32_t, std::uint32_t>;
-	std::uint32_t count;
+	std::uint32_t index;
 	variant_t offset;
 	std::vector<std::uint32_t> indices;
 };
 BOOST_FUSION_ADAPT_STRUCT(
 	wasm::parse::ElemSegment,
-	(std::uint32_t, count),
+	(std::uint32_t, index),
 	(wasm::parse::ElemSegment::variant_t, offset),
 	(std::vector<std::uint32_t>, indices)
 )
 std::ostream& wasm::parse::operator<<(std::ostream& os, const ElemSegment& seg)
 {
-	os << "ElemSegment(count = " << seg.count;
+	os << "ElemSegment(index = " << seg.index;
 	os << ", offset = ";
 	if(seg.offset.index() == 0)
 		os << seg.offset;
@@ -297,19 +297,19 @@ std::ostream& wasm::parse::operator<<(std::ostream& os, const ElemSegment& seg)
 
 struct wasm::parse::DataSegment {
 	using variant_t = std::variant<std::int32_t, std::uint32_t>;
-	std::uint32_t count;
+	std::uint32_t index;
 	variant_t offset;
 	std::vector<std::uint8_t> data;
 };
 BOOST_FUSION_ADAPT_STRUCT(
 	wasm::parse::DataSegment,
-	(std::uint32_t, count),
+	(std::uint32_t, index),
 	(wasm::parse::DataSegment::variant_t, offset),
 	(std::vector<std::uint8_t>, data)
 )
 std::ostream& wasm::parse::operator<<(std::ostream& os, const DataSegment& seg)
 {
-	os << "DataSegment(count = " << seg.count;
+	os << "DataSegment(index = " << seg.index;
 	os << ", offset = ";
 	if(seg.offset.index() == 0)
 		os << seg.offset;
