@@ -136,8 +136,13 @@ struct WasmModule {
 
 
 	using signature_vector_type = SimpleVector<WasmFunctionSignature>;
+	using function_type = Function;
+	using table_type = WasmTable;
+	using memory_type = WasmLinearMemory;
+	using global_type = WasmGlobal;
+
 	using export_type = std::variant<
-		WasmFunction**, WasmTable**, WasmMemory**, WasmGlobal**
+		function_type**, table_type**, memory_type**, global_type**
 	>;
 	using export_map_type = std::unordered_map<std::string, export_type>;
 
@@ -175,30 +180,15 @@ private:
 		{
 			for(const auto& [field_name, import_def]: import_map)
 			{
-				const auto& [idx, tp] = import_def;
+				const auto& [idx, import_tp] = import_def;
 				if(idx != index)
 					continue;
-				switch(Kind)
-				{
-				case ExternalKind::Function:
-					if(std::holds_alternative<WasmFunctionSignature>(tp))
-						return pair_type(module_name, field_name);
-					break;
-				case ExternalKind::Table:
-					if(std::holds_alternative<parse::Table>(tp))
-						return pair_type(module_name, field_name);
-					break;
-				case ExternalKind::Memory:
-					if(std::holds_alternative<parse::Memory>(tp))
-						return pair_type(module_name, field_name);
-					break;
-				case ExternalKind::Memory:
-					if(std::holds_alternative<parse::Memory>(tp))
-						return pair_type(module_name, field_name);
-					break;
-				default:
-					assert(false);
-				}
+				bool match = std::visit(
+					[](const auto& t) { return (t.external_kind_v == Kind); },
+					import_tp
+				);
+				if(match)
+					return pair_type(module_name, field_name);
 			}
 		}
 		assert(false and "Internal error: imported field is not an import.");
@@ -467,7 +457,7 @@ private:
 			return std::get<wasm_sint32_t>(ofs_var);
 		auto globals_offset = std::get<wasm_uint32_t>(ofs_var);
 		if(auto g = globals_.at(globals_offset); g and not g->has_dependency())
-			return read<wasm_sint32_t>(*g);
+			return g->get(tp::i32);
 		else
 			return std::nullopt;
 	}
@@ -536,9 +526,7 @@ private:
 		if(auto pos = elem_segs_.find(dep); pos != elem_segs_.end())
 		{
 			for(auto& seg: *pos)
-			{
 				initialize_elem_segment(std::move(seg));
-			}
 			elem_segs_.erase(pos);
 		}
 		if(auto pos = data_segs_.find(dep); pos != data_segs_.end())
@@ -556,6 +544,27 @@ private:
 		}
 	}
 
+	template <class Visitor>
+	decltype(auto) visit_index_space(Visitor&& vis, ExternalKind kind)
+	{
+		switch(kind)
+		{
+		case ExternalKind::Function: 
+			std::invoke(std::forward<Visitor>(vis), functions_);
+			break;
+		case ExternalKind::Table:
+			std::invoke(std::forward<Visitor>(vis), tables_);
+			break;
+		case ExternalKind::Memory:
+			std::invoke(std::forward<Visitor>(vis), memories_);
+			break;
+		case ExternalKind::Global:
+			std::invoke(std::forward<Visitor>(vis), globals_);
+			break;
+		default:
+			assert(false);
+		}
+	}
 
 	export_map_type read_export_section(ModuleDef&& module_def)
 	{
@@ -566,23 +575,7 @@ private:
 				auto [_, success] = exports.try_emplace(std::move(entry.name), &(index_space[entry.index]));
 				assert(success);
 			};
-			switch(entry.kind)
-			{
-			case ExternalKind::Function: 
-				add_export(functions_);
-				break;
-			case ExternalKind::Table:
-				add_export(tables_);
-				break;
-			case ExternalKind::Memory:
-				add_export(memories_);
-				break;
-			case ExternalKind::Global:
-				add_export(globals_);
-				break;
-			default:
-				assert(false);
-			}
+			visit_index_space(add_export, entry.kind);
 		}
 		return exports;
 	}
@@ -605,18 +598,14 @@ private:
 					space += 1u;
 				};
 				
+				auto& space = spaces[static_cast<std::size_t>(entry.kind())];
 				auto visit_import = [&](auto&& entry_type) {
 					using type = std::decay_t<decltype(entry_type)>;
 					if constexpr(std::is_same_v<type, std::uint32_t>)
-						emplace_import(spaces[std::size_t(ExternalKind::Function)], signatures[entry_type]);
-					else if constexpr(std::is_same_v<type, parse::Table>)
-						emplace_import(spaces[std::size_t(ExternalKind::Table)], std::move(entry_type));
-					else if constexpr(std::is_same_v<type, parse::Memory>)
-						emplace_import(spaces[std::size_t(ExternalKind::Memory)], std::move(entry_type));
-					else if constexpr(std::is_same_v<type, parse::GlobalType>)
-						emplace_import(spaces[std::size_t(ExternalKind::Global)], std::move(entry_type));
+						return emplace_import(space, signatures[entry_type]);
 					else
-						assert(false && "Unreachable.");
+						return emplace_import(space, std::move(entry_type));
+					assert(false && "Unreachable.");
 				};
 				std::visit(visit_import, std::move(entry));
 			}

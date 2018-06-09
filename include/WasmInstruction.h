@@ -6,9 +6,14 @@
 #include <type_traits>
 #include <array>
 #include <bitset>
+#include <optional>
+#include <variant>
+#include <algorithm>
 #include <iosfwd>
 #include <ostream>
 #include <iomanip>
+#include <gsl/span>
+#include <gsl/gsl>
 #include "wasm_base.h"
 
 
@@ -17,7 +22,6 @@ namespace opc {
 
 enum class OpCode: wasm_ubyte_t
 {
-	
 	// BLOCK INSTRUCTIONS
 	BLOCK			= 0x02u,
 	LOOP			= 0x03u,
@@ -228,7 +232,389 @@ enum class OpCode: wasm_ubyte_t
 };
 
 
+template <template <OpCode> class TemplateVis, class Vis>
+decltype(auto) visit_opcode_template(Vis&& visitor) {
+	switch(opcode())
+	{
+	/// CONTROL FLOW OPS
+	case OpCode::UNREACHABLE:       return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::UNREACHABLE>{});
+	case OpCode::NOP:               return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::NOP>{});
+	case OpCode::BLOCK:             return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::BLOCK>{});
+	case OpCode::LOOP:              return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::LOOP>{});
+	case OpCode::IF:                return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::IF>{});
+	case OpCode::ELSE:              return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::ELSE>{});
+	case OpCode::END:               return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::END>{});
+	case OpCode::BR:                return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::BR>{});
+	case OpCode::BR_IF:             return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::BR_IF>{});
+	case OpCode::BR_TABLE:          return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::BR_TABLE>{});
+	case OpCode::RETURN:            return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::RETURN>{});
+	case OpCode::CALL:              return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::CALL>{});
+	case OpCode::CALL_INDIRECT:     return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::CALL_INDIRECT>{});
+	/// PARAMETRIC OPS
+	case OpCode::DROP:              return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::DROP>{});
+	case OpCode::SELECT:            return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::SELECT>{});
+	case OpCode::GET_LOCAL:         return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::GET_LOCAL>{});
+	case OpCode::SET_LOCAL:         return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::SET_LOCAL>{});
+	case OpCode::TEE_LOCAL:         return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::TEE_LOCAL>{});
+	case OpCode::GET_GLOBAL:        return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::GET_GLOBAL>{});
+	case OpCode::SET_GLOBAL:        return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::SET_GLOBAL>{});
+	/// MEMORY OPS
+	// load
+	case OpCode::I32_LOAD:          return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_LOAD>{});
+	case OpCode::I64_LOAD:          return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_LOAD>{});
+	case OpCode::F32_LOAD:          return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F32_LOAD>{});
+	case OpCode::F64_LOAD:          return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F64_LOAD>{});
+	// i32 extending loads
+	case OpCode::I32_LOAD8_S:       return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_LOAD8_S>{});
+	case OpCode::I32_LOAD8_U:       return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_LOAD8_U>{});
+	case OpCode::I32_LOAD16_S:      return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_LOAD16_S>{});
+	case OpCode::I32_LOAD16_U:      return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_LOAD16_U>{});
+	// i64 extending loads
+	case OpCode::I64_LOAD8_S:       return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_LOAD8_S>{});
+	case OpCode::I64_LOAD8_U:       return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_LOAD8_U>{});
+	case OpCode::I64_LOAD16_S:      return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_LOAD16_S>{});
+	case OpCode::I64_LOAD16_U:      return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_LOAD16_U>{});
+	case OpCode::I64_LOAD32_S:      return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_LOAD32_S>{});
+	case OpCode::I64_LOAD32_U:      return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_LOAD32_U>{});
+	// store
+	case OpCode::I32_STORE:         return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_STORE>{});
+	case OpCode::I64_STORE:         return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_STORE>{});
+	case OpCode::F32_STORE:         return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F32_STORE>{});
+	case OpCode::F64_STORE:         return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F64_STORE>{});
+	// i32 wrapping stores 
+	case OpCode::I32_STORE8:        return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_STORE8>{});
+	case OpCode::I32_STORE16:       return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_STORE16>{});
+	// i64 wrapping stores 
+	case OpCode::I64_STORE8:        return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_STORE8>{});
+	case OpCode::I64_STORE16:       return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_STORE16>{});
+	case OpCode::I64_STORE32:       return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_STORE32>{});
+	// misc
+	case OpCode::CURRENT_MEMORY:    return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::CURRENT_MEMORY>{});
+	case OpCode::GROW_MEMORY:       return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::GROW_MEMORY>{});
+	/// CONST OPERATIONS
+	case OpCode::I32_CONST:         return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_CONST>{});
+	case OpCode::I64_CONST:         return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_CONST>{});
+	case OpCode::F32_CONST:         return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F32_CONST>{});
+	case OpCode::F64_CONST:         return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F64_CONST>{});
+	/// COMPARISON OPERATIONS
+	// i32 comparisons
+	case OpCode::I32_EQZ:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_EQZ>{});
+	case OpCode::I32_EQ:            return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_EQ>{});
+	case OpCode::I32_NE:            return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_NE>{});
+	case OpCode::I32_LT_S:          return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_LT_S>{});
+	case OpCode::I32_LT_U:          return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_LT_U>{});
+	case OpCode::I32_GT_S:          return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_GT_S>{});
+	case OpCode::I32_GT_U:          return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_GT_U>{});
+	case OpCode::I32_LE_S:          return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_LE_S>{});
+	case OpCode::I32_LE_U:          return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_LE_U>{});
+	case OpCode::I32_GE_S:          return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_GE_S>{});
+	case OpCode::I32_GE_U:          return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_GE_U>{});
+	// i64 comparisons
+	case OpCode::I64_EQZ:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_EQZ>{});
+	case OpCode::I64_EQ:            return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_EQ>{});
+	case OpCode::I64_NE:            return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_NE>{});
+	case OpCode::I64_LT_S:          return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_LT_S>{});
+	case OpCode::I64_LT_U:          return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_LT_U>{});
+	case OpCode::I64_GT_S:          return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_GT_S>{});
+	case OpCode::I64_GT_U:          return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_GT_U>{});
+	case OpCode::I64_LE_S:          return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_LE_S>{});
+	case OpCode::I64_LE_U:          return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_LE_U>{});
+	case OpCode::I64_GE_S:          return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_GE_S>{});
+	case OpCode::I64_GE_U:          return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_GE_U>{});
+	// f32 comparisons
+	case OpCode::F32_EQ:            return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F32_EQ>{});
+	case OpCode::F32_NE:            return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F32_NE>{});
+	case OpCode::F32_LT:            return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F32_LT>{});
+	case OpCode::F32_GT:            return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F32_GT>{});
+	case OpCode::F32_LE:            return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F32_LE>{});
+	case OpCode::F32_GE:            return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F32_GE>{});
+	// f64 comparisons
+	case OpCode::F64_EQ:            return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F64_EQ>{});
+	case OpCode::F64_NE:            return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F64_NE>{});
+	case OpCode::F64_LT:            return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F64_LT>{});
+	case OpCode::F64_GT:            return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F64_GT>{});
+	case OpCode::F64_LE:            return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F64_LE>{});
+	case OpCode::F64_GE:            return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F64_GE>{});
+	/// NUMERIC OPERATIONS
+	// i32 operations
+	case OpCode::I32_CLZ:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_CLZ>{});
+	case OpCode::I32_CTZ:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_CTZ>{});
+	case OpCode::I32_POPCNT:        return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_POPCNT>{});
+	case OpCode::I32_ADD:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_ADD>{});
+	case OpCode::I32_SUB:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_SUB>{});
+	case OpCode::I32_MUL:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_MUL>{});
+	case OpCode::I32_DIV_S:         return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_DIV_S>{});
+	case OpCode::I32_DIV_U:         return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_DIV_U>{});
+	case OpCode::I32_REM_S:         return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_REM_S>{});
+	case OpCode::I32_REM_U:         return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_REM_U>{});
+	case OpCode::I32_AND:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_AND>{});
+	case OpCode::I32_OR:            return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_OR>{});
+	case OpCode::I32_XOR:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_XOR>{});
+	case OpCode::I32_SHL:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_SHL>{});
+	case OpCode::I32_SHR_S:         return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_SHR_S>{});
+	case OpCode::I32_SHR_U:         return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_SHR_U>{});
+	case OpCode::I32_ROTL:          return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_ROTL>{});
+	case OpCode::I32_ROTR:          return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_ROTR>{});
+	// i64 operations
+	case OpCode::I64_CLZ:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_CLZ>{});
+	case OpCode::I64_CTZ:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_CTZ>{});
+	case OpCode::I64_POPCNT:        return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_POPCNT>{});
+	case OpCode::I64_ADD:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_ADD>{});
+	case OpCode::I64_SUB:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_SUB>{});
+	case OpCode::I64_MUL:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_MUL>{});
+	case OpCode::I64_DIV_S:         return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_DIV_S>{});
+	case OpCode::I64_DIV_U:         return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_DIV_U>{});
+	case OpCode::I64_REM_S:         return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_REM_S>{});
+	case OpCode::I64_REM_U:         return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_REM_U>{});
+	case OpCode::I64_AND:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_AND>{});
+	case OpCode::I64_OR:            return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_OR>{});
+	case OpCode::I64_XOR:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_XOR>{});
+	case OpCode::I64_SHL:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_SHL>{});
+	case OpCode::I64_SHR_S:         return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_SHR_S>{});
+	case OpCode::I64_SHR_U:         return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_SHR_U>{});
+	case OpCode::I64_ROTL:          return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_ROTL>{});
+	case OpCode::I64_ROTR:          return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_ROTR>{});
+	// f32 operations
+	case OpCode::F32_ABS:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F32_ABS>{});
+	case OpCode::F32_NEG:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F32_NEG>{});
+	case OpCode::F32_CEIL:          return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F32_CEIL>{});
+	case OpCode::F32_FLOOR:         return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F32_FLOOR>{});
+	case OpCode::F32_TRUNC:         return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F32_TRUNC>{});
+	case OpCode::F32_NEAREST:       return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F32_NEAREST>{});
+	case OpCode::F32_SQRT:          return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F32_SQRT>{});
+	case OpCode::F32_ADD:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F32_ADD>{});
+	case OpCode::F32_SUB:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F32_SUB>{});
+	case OpCode::F32_MUL:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F32_MUL>{});
+	case OpCode::F32_DIV:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F32_DIV>{});
+	case OpCode::F32_MIN:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F32_MIN>{});
+	case OpCode::F32_MAX:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F32_MAX>{});
+	case OpCode::F32_COPYSIGN:      return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F32_COPYSIGN>{});
+	// f64 operations
+	case OpCode::F64_ABS:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F64_ABS>{});
+	case OpCode::F64_NEG:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F64_NEG>{});
+	case OpCode::F64_CEIL:          return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F64_CEIL>{});
+	case OpCode::F64_FLOOR:         return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F64_FLOOR>{});
+	case OpCode::F64_TRUNC:         return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F64_TRUNC>{});
+	case OpCode::F64_NEAREST:       return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F64_NEAREST>{});
+	case OpCode::F64_SQRT:          return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F64_SQRT>{});
+	case OpCode::F64_ADD:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F64_ADD>{});
+	case OpCode::F64_SUB:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F64_SUB>{});
+	case OpCode::F64_MUL:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F64_MUL>{});
+	case OpCode::F64_DIV:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F64_DIV>{});
+	case OpCode::F64_MIN:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F64_MIN>{});
+	case OpCode::F64_MAX:           return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F64_MAX>{});
+	case OpCode::F64_COPYSIGN:      return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F64_COPYSIGN>{});
+	/// CONVERSION OPERATIONS
+	case OpCode::I32_WRAP_I64:      return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_WRAP_I64>{});
+	// float-to-int32 tuncating conversion
+	case OpCode::I32_TRUNC_S_F32:   return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_TRUNC_S_F32>{});
+	case OpCode::I32_TRUNC_U_F32:   return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_TRUNC_U_F32>{});
+	case OpCode::I32_TRUNC_S_F64:   return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_TRUNC_S_F64>{});
+	case OpCode::I32_TRUNC_U_F64:   return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I32_TRUNC_U_F64>{});
+	// int32-to-int64 extending conversion
+	case OpCode::I64_EXTEND_S_I32:  return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_EXTEND_S_I32>{});
+	case OpCode::I64_EXTEND_U_I32:  return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_EXTEND_U_I32>{});
+	// float-to-int64 truncating conversion
+	case OpCode::I64_TRUNC_S_F32:   return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_TRUNC_S_F32>{});
+	case OpCode::I64_TRUNC_U_F32:   return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_TRUNC_U_F32>{});
+	case OpCode::I64_TRUNC_S_F64:   return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_TRUNC_S_F64>{});
+	case OpCode::I64_TRUNC_U_F64:   return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::I64_TRUNC_U_F64>{});
+	// int-to-float32 conversion
+	case OpCode::F32_CONVERT_S_I32: return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F32_CONVERT_S_I32>{});
+	case OpCode::F32_CONVERT_U_I32: return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F32_CONVERT_U_I32>{});
+	case OpCode::F32_CONVERT_S_I64: return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F32_CONVERT_S_I64>{});
+	case OpCode::F32_CONVERT_U_I64: return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F32_CONVERT_U_I64>{});
+	// float64-to-float32 demoting conversion
+	case OpCode::F32_DEMOTE_F64:    return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F32_DEMOTE_F64>{});
+	// int-to-float64 conversion
+	case OpCode::F64_CONVERT_S_I32: return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F64_CONVERT_S_I32>{});
+	case OpCode::F64_CONVERT_U_I32: return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F64_CONVERT_U_I32>{});
+	case OpCode::F64_CONVERT_S_I64: return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F64_CONVERT_S_I64>{});
+	case OpCode::F64_CONVERT_U_I64: return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F64_CONVERT_U_I64>{});
+	// float32-to-float64 promoting conversion
+	case OpCode::F64_PROMOTE_F32:   return std::invoke(std::forward<Vis>(visitor), TemplateVis<OpCode::F64_PROMOTE_F32>{});
+	default:                        assert(false);
+	}
+}
 
+template <LanguageType LT>
+using language_type_constant_t = std::integral_constant<LanguageType, LT>;
+
+template <class Vis>
+decltype(auto) visit_opcode(Vis&& visitor) {
+	return visit_opcode_template<language_type_constant_t>(visitor);
+}
+
+inline constexpr const std::array<OpCode, 168u> all_opcodes {
+	OpCode::UNREACHABLE, 
+	OpCode::NOP, 
+	OpCode::BLOCK, 
+	OpCode::LOOP, 
+	OpCode::IF, 
+	OpCode::ELSE, 
+	OpCode::END, 
+	OpCode::BR, 
+	OpCode::BR_IF, 
+	OpCode::BR_TABLE, 
+	OpCode::RETURN, 
+	OpCode::CALL, 
+	OpCode::CALL_INDIRECT, 
+	OpCode::DROP, 
+	OpCode::SELECT, 
+	OpCode::GET_LOCAL, 
+	OpCode::SET_LOCAL, 
+	OpCode::TEE_LOCAL, 
+	OpCode::GET_GLOBAL, 
+	OpCode::SET_GLOBAL, 
+	OpCode::I32_LOAD, 
+	OpCode::I64_LOAD, 
+	OpCode::F32_LOAD, 
+	OpCode::F64_LOAD, 
+	OpCode::I32_LOAD8_S, 
+	OpCode::I32_LOAD8_U, 
+	OpCode::I32_LOAD16_S, 
+	OpCode::I32_LOAD16_U, 
+	OpCode::I64_LOAD8_S, 
+	OpCode::I64_LOAD8_U, 
+	OpCode::I64_LOAD16_S, 
+	OpCode::I64_LOAD16_U, 
+	OpCode::I64_LOAD32_S, 
+	OpCode::I64_LOAD32_U, 
+	OpCode::I32_STORE, 
+	OpCode::I64_STORE, 
+	OpCode::F32_STORE, 
+	OpCode::F64_STORE, 
+	OpCode::I32_STORE8, 
+	OpCode::I32_STORE16, 
+	OpCode::I64_STORE8, 
+	OpCode::I64_STORE16, 
+	OpCode::I64_STORE32, 
+	OpCode::CURRENT_MEMORY, 
+	OpCode::GROW_MEMORY, 
+	OpCode::I32_CONST, 
+	OpCode::I64_CONST, 
+	OpCode::F32_CONST, 
+	OpCode::F64_CONST, 
+	OpCode::I32_EQZ, 
+	OpCode::I32_EQ, 
+	OpCode::I32_NE, 
+	OpCode::I32_LT_S, 
+	OpCode::I32_LT_U, 
+	OpCode::I32_GT_S, 
+	OpCode::I32_GT_U, 
+	OpCode::I32_LE_S, 
+	OpCode::I32_LE_U, 
+	OpCode::I32_GE_S, 
+	OpCode::I32_GE_U, 
+	OpCode::I64_EQZ, 
+	OpCode::I64_EQ, 
+	OpCode::I64_NE, 
+	OpCode::I64_LT_S, 
+	OpCode::I64_LT_U, 
+	OpCode::I64_GT_S, 
+	OpCode::I64_GT_U, 
+	OpCode::I64_LE_S, 
+	OpCode::I64_LE_U, 
+	OpCode::I64_GE_S, 
+	OpCode::I64_GE_U, 
+	OpCode::F32_EQ, 
+	OpCode::F32_NE, 
+	OpCode::F32_LT, 
+	OpCode::F32_GT, 
+	OpCode::F32_LE, 
+	OpCode::F32_GE, 
+	OpCode::F64_EQ, 
+	OpCode::F64_NE, 
+	OpCode::F64_LT, 
+	OpCode::F64_GT, 
+	OpCode::F64_LE, 
+	OpCode::F64_GE, 
+	OpCode::I32_CLZ, 
+	OpCode::I32_CTZ, 
+	OpCode::I32_POPCNT, 
+	OpCode::I32_ADD, 
+	OpCode::I32_SUB, 
+	OpCode::I32_MUL, 
+	OpCode::I32_DIV_S, 
+	OpCode::I32_DIV_U, 
+	OpCode::I32_REM_S, 
+	OpCode::I32_REM_U, 
+	OpCode::I32_AND, 
+	OpCode::I32_OR, 
+	OpCode::I32_XOR, 
+	OpCode::I32_SHL, 
+	OpCode::I32_SHR_S, 
+	OpCode::I32_SHR_U, 
+	OpCode::I32_ROTL, 
+	OpCode::I32_ROTR, 
+	OpCode::I64_CLZ, 
+	OpCode::I64_CTZ, 
+	OpCode::I64_POPCNT, 
+	OpCode::I64_ADD, 
+	OpCode::I64_SUB, 
+	OpCode::I64_MUL, 
+	OpCode::I64_DIV_S, 
+	OpCode::I64_DIV_U, 
+	OpCode::I64_REM_S, 
+	OpCode::I64_REM_U, 
+	OpCode::I64_AND, 
+	OpCode::I64_OR, 
+	OpCode::I64_XOR, 
+	OpCode::I64_SHL, 
+	OpCode::I64_SHR_S, 
+	OpCode::I64_SHR_U, 
+	OpCode::I64_ROTL, 
+	OpCode::I64_ROTR, 
+	OpCode::F32_ABS, 
+	OpCode::F32_NEG, 
+	OpCode::F32_CEIL, 
+	OpCode::F32_FLOOR, 
+	OpCode::F32_TRUNC, 
+	OpCode::F32_NEAREST, 
+	OpCode::F32_SQRT, 
+	OpCode::F32_ADD, 
+	OpCode::F32_SUB, 
+	OpCode::F32_MUL, 
+	OpCode::F32_DIV, 
+	OpCode::F32_MIN, 
+	OpCode::F32_MAX, 
+	OpCode::F32_COPYSIGN, 
+	OpCode::F64_ABS, 
+	OpCode::F64_NEG, 
+	OpCode::F64_CEIL, 
+	OpCode::F64_FLOOR, 
+	OpCode::F64_TRUNC, 
+	OpCode::F64_NEAREST, 
+	OpCode::F64_SQRT, 
+	OpCode::F64_ADD, 
+	OpCode::F64_SUB, 
+	OpCode::F64_MUL, 
+	OpCode::F64_DIV, 
+	OpCode::F64_MIN, 
+	OpCode::F64_MAX, 
+	OpCode::F64_COPYSIGN, 
+	OpCode::I32_WRAP_I64, 
+	OpCode::I32_TRUNC_S_F32, 
+	OpCode::I32_TRUNC_U_F32, 
+	OpCode::I32_TRUNC_S_F64, 
+	OpCode::I32_TRUNC_U_F64, 
+	OpCode::I64_EXTEND_S_I32, 
+	OpCode::I64_EXTEND_U_I32, 
+	OpCode::I64_TRUNC_S_F32, 
+	OpCode::I64_TRUNC_U_F32, 
+	OpCode::I64_TRUNC_S_F64, 
+	OpCode::I64_TRUNC_U_F64, 
+	OpCode::F32_CONVERT_S_I32, 
+	OpCode::F32_CONVERT_U_I32, 
+	OpCode::F32_CONVERT_S_I64, 
+	OpCode::F32_CONVERT_U_I64, 
+	OpCode::F32_DEMOTE_F64, 
+	OpCode::F64_CONVERT_S_I32, 
+	OpCode::F64_CONVERT_U_I32, 
+	OpCode::F64_CONVERT_S_I64, 
+	OpCode::F64_CONVERT_U_I64, 
+	OpCode::F64_PROMOTE_F32
+};
 
 
 namespace detail {
@@ -238,193 +624,8 @@ const std::bitset<256>& opcode_mask()
 	static const std::bitset<256> bs {[]() -> std::bitset<256> {
 		using int_type = std::underlying_type_t<OpCode>;
 		std::bitset<256> tmp;
-		tmp.set(static_cast<int_type>(OpCode::BLOCK));
-		tmp.set(static_cast<int_type>(OpCode::LOOP));
-		tmp.set(static_cast<int_type>(OpCode::BR));
-		tmp.set(static_cast<int_type>(OpCode::BR_IF));
-		tmp.set(static_cast<int_type>(OpCode::BR_TABLE));
-		tmp.set(static_cast<int_type>(OpCode::IF));
-		tmp.set(static_cast<int_type>(OpCode::ELSE));
-		tmp.set(static_cast<int_type>(OpCode::END));
-		tmp.set(static_cast<int_type>(OpCode::RETURN));
-		tmp.set(static_cast<int_type>(OpCode::UNREACHABLE));
-
-		tmp.set(static_cast<int_type>(OpCode::NOP));
-		tmp.set(static_cast<int_type>(OpCode::DROP));
-		tmp.set(static_cast<int_type>(OpCode::I32_CONST));
-		tmp.set(static_cast<int_type>(OpCode::I64_CONST));
-		tmp.set(static_cast<int_type>(OpCode::F32_CONST));
-		tmp.set(static_cast<int_type>(OpCode::F64_CONST));
-		tmp.set(static_cast<int_type>(OpCode::GET_LOCAL));
-		tmp.set(static_cast<int_type>(OpCode::SET_LOCAL));
-		tmp.set(static_cast<int_type>(OpCode::TEE_LOCAL));
-		tmp.set(static_cast<int_type>(OpCode::GET_GLOBAL));
-		tmp.set(static_cast<int_type>(OpCode::SET_GLOBAL));
-		tmp.set(static_cast<int_type>(OpCode::SELECT));
-		tmp.set(static_cast<int_type>(OpCode::CALL));
-		tmp.set(static_cast<int_type>(OpCode::CALL_INDIRECT));
-
-		tmp.set(static_cast<int_type>(OpCode::I32_ADD));
-		tmp.set(static_cast<int_type>(OpCode::I32_SUB));
-		tmp.set(static_cast<int_type>(OpCode::I32_MUL));
-		tmp.set(static_cast<int_type>(OpCode::I32_DIV_S));
-		tmp.set(static_cast<int_type>(OpCode::I32_DIV_U));
-		tmp.set(static_cast<int_type>(OpCode::I32_REM_S));
-		tmp.set(static_cast<int_type>(OpCode::I32_REM_U));
-		tmp.set(static_cast<int_type>(OpCode::I32_AND));
-		tmp.set(static_cast<int_type>(OpCode::I32_OR));
-		tmp.set(static_cast<int_type>(OpCode::I32_XOR));
-		tmp.set(static_cast<int_type>(OpCode::I32_SHL));
-		tmp.set(static_cast<int_type>(OpCode::I32_SHR_S));
-		tmp.set(static_cast<int_type>(OpCode::I32_SHR_U));
-		tmp.set(static_cast<int_type>(OpCode::I32_ROTL));
-		tmp.set(static_cast<int_type>(OpCode::I32_ROTR));
-		tmp.set(static_cast<int_type>(OpCode::I32_CLZ));
-		tmp.set(static_cast<int_type>(OpCode::I32_CTZ));
-		tmp.set(static_cast<int_type>(OpCode::I32_POPCNT));
-		tmp.set(static_cast<int_type>(OpCode::I32_EQZ));
-
-		tmp.set(static_cast<int_type>(OpCode::I64_ADD));
-		tmp.set(static_cast<int_type>(OpCode::I64_SUB));
-		tmp.set(static_cast<int_type>(OpCode::I64_MUL));
-		tmp.set(static_cast<int_type>(OpCode::I64_DIV_S));
-		tmp.set(static_cast<int_type>(OpCode::I64_DIV_U));
-		tmp.set(static_cast<int_type>(OpCode::I64_REM_S));
-		tmp.set(static_cast<int_type>(OpCode::I64_REM_U));
-		tmp.set(static_cast<int_type>(OpCode::I64_AND));
-		tmp.set(static_cast<int_type>(OpCode::I64_OR));
-		tmp.set(static_cast<int_type>(OpCode::I64_XOR));
-		tmp.set(static_cast<int_type>(OpCode::I64_SHL));
-		tmp.set(static_cast<int_type>(OpCode::I64_SHR_S));
-		tmp.set(static_cast<int_type>(OpCode::I64_SHR_U));
-		tmp.set(static_cast<int_type>(OpCode::I64_ROTL));
-		tmp.set(static_cast<int_type>(OpCode::I64_ROTR));
-		tmp.set(static_cast<int_type>(OpCode::I64_CLZ));
-		tmp.set(static_cast<int_type>(OpCode::I64_CTZ));
-		tmp.set(static_cast<int_type>(OpCode::I64_POPCNT));
-		tmp.set(static_cast<int_type>(OpCode::I64_EQZ));
-
-		tmp.set(static_cast<int_type>(OpCode::F32_ADD));
-		tmp.set(static_cast<int_type>(OpCode::F32_SUB));
-		tmp.set(static_cast<int_type>(OpCode::F32_MUL));
-		tmp.set(static_cast<int_type>(OpCode::F32_DIV));
-		tmp.set(static_cast<int_type>(OpCode::F32_SQRT));
-		tmp.set(static_cast<int_type>(OpCode::F32_MIN));
-		tmp.set(static_cast<int_type>(OpCode::F32_MAX));
-		tmp.set(static_cast<int_type>(OpCode::F32_CEIL));
-		tmp.set(static_cast<int_type>(OpCode::F32_FLOOR));
-		tmp.set(static_cast<int_type>(OpCode::F32_TRUNC));
-		tmp.set(static_cast<int_type>(OpCode::F32_NEAREST));
-		tmp.set(static_cast<int_type>(OpCode::F32_ABS));
-		tmp.set(static_cast<int_type>(OpCode::F32_NEG));
-		tmp.set(static_cast<int_type>(OpCode::F32_COPYSIGN));
-
-		tmp.set(static_cast<int_type>(OpCode::F64_ADD));
-		tmp.set(static_cast<int_type>(OpCode::F64_SUB));
-		tmp.set(static_cast<int_type>(OpCode::F64_MUL));
-		tmp.set(static_cast<int_type>(OpCode::F64_DIV));
-		tmp.set(static_cast<int_type>(OpCode::F64_SQRT));
-		tmp.set(static_cast<int_type>(OpCode::F64_MIN));
-		tmp.set(static_cast<int_type>(OpCode::F64_MAX));
-		tmp.set(static_cast<int_type>(OpCode::F64_CEIL));
-		tmp.set(static_cast<int_type>(OpCode::F64_FLOOR));
-		tmp.set(static_cast<int_type>(OpCode::F64_TRUNC));
-		tmp.set(static_cast<int_type>(OpCode::F64_NEAREST));
-		tmp.set(static_cast<int_type>(OpCode::F64_ABS));
-		tmp.set(static_cast<int_type>(OpCode::F64_NEG));
-		tmp.set(static_cast<int_type>(OpCode::F64_COPYSIGN));
-
-		tmp.set(static_cast<int_type>(OpCode::I32_EQ));
-		tmp.set(static_cast<int_type>(OpCode::I32_NE));
-		tmp.set(static_cast<int_type>(OpCode::I32_LT_S));
-		tmp.set(static_cast<int_type>(OpCode::I32_LT_U));
-		tmp.set(static_cast<int_type>(OpCode::I32_GT_S));
-		tmp.set(static_cast<int_type>(OpCode::I32_GT_U));
-		tmp.set(static_cast<int_type>(OpCode::I32_LE_S));
-		tmp.set(static_cast<int_type>(OpCode::I32_LE_U));
-		tmp.set(static_cast<int_type>(OpCode::I32_GE_S));
-		tmp.set(static_cast<int_type>(OpCode::I32_GE_U));
-
-		tmp.set(static_cast<int_type>(OpCode::I64_EQ));
-		tmp.set(static_cast<int_type>(OpCode::I64_NE));
-		tmp.set(static_cast<int_type>(OpCode::I64_LT_S));
-		tmp.set(static_cast<int_type>(OpCode::I64_LT_U));
-		tmp.set(static_cast<int_type>(OpCode::I64_GT_S));
-		tmp.set(static_cast<int_type>(OpCode::I64_GT_U));
-		tmp.set(static_cast<int_type>(OpCode::I64_LE_S));
-		tmp.set(static_cast<int_type>(OpCode::I64_LE_U));
-		tmp.set(static_cast<int_type>(OpCode::I64_GE_S));
-		tmp.set(static_cast<int_type>(OpCode::I64_GE_U));
-
-		tmp.set(static_cast<int_type>(OpCode::F32_EQ));
-		tmp.set(static_cast<int_type>(OpCode::F32_NE));
-		tmp.set(static_cast<int_type>(OpCode::F32_LT));
-		tmp.set(static_cast<int_type>(OpCode::F32_GT));
-		tmp.set(static_cast<int_type>(OpCode::F32_LE));
-		tmp.set(static_cast<int_type>(OpCode::F32_GE));
-
-		tmp.set(static_cast<int_type>(OpCode::F64_EQ));
-		tmp.set(static_cast<int_type>(OpCode::F64_NE));
-		tmp.set(static_cast<int_type>(OpCode::F64_LT));
-		tmp.set(static_cast<int_type>(OpCode::F64_GT));
-		tmp.set(static_cast<int_type>(OpCode::F64_LE));
-		tmp.set(static_cast<int_type>(OpCode::F64_GE));
-
-		tmp.set(static_cast<int_type>(OpCode::I32_WRAP));
-		tmp.set(static_cast<int_type>(OpCode::I32_TRUNC_F32_S));
-		tmp.set(static_cast<int_type>(OpCode::I32_TRUNC_F32_U));
-		tmp.set(static_cast<int_type>(OpCode::I32_TRUNC_F64_S));
-		tmp.set(static_cast<int_type>(OpCode::I32_TRUNC_F64_U));
-		tmp.set(static_cast<int_type>(OpCode::I32_REINTERPRET_F32));
-
-		tmp.set(static_cast<int_type>(OpCode::I64_EXTEND_S));
-		tmp.set(static_cast<int_type>(OpCode::I64_EXTEND_U));
-		tmp.set(static_cast<int_type>(OpCode::I64_TRUNC_F32_S));
-		tmp.set(static_cast<int_type>(OpCode::I64_TRUNC_F32_U));
-		tmp.set(static_cast<int_type>(OpCode::I64_TRUNC_F64_S));
-		tmp.set(static_cast<int_type>(OpCode::I64_TRUNC_F64_U));
-		tmp.set(static_cast<int_type>(OpCode::I64_REINTERPRET_F64));
-
-		tmp.set(static_cast<int_type>(OpCode::F32_DEMOTE));
-		tmp.set(static_cast<int_type>(OpCode::F32_CONVERT_I32_S));
-		tmp.set(static_cast<int_type>(OpCode::F32_CONVERT_I32_U));
-		tmp.set(static_cast<int_type>(OpCode::F32_CONVERT_I64_S));
-		tmp.set(static_cast<int_type>(OpCode::F32_CONVERT_I64_U));
-		tmp.set(static_cast<int_type>(OpCode::F32_REINTERPRET_I32));
-
-		tmp.set(static_cast<int_type>(OpCode::F64_PROMOTE));
-		tmp.set(static_cast<int_type>(OpCode::F64_CONVERT_I32_S));
-		tmp.set(static_cast<int_type>(OpCode::F64_CONVERT_I32_U));
-		tmp.set(static_cast<int_type>(OpCode::F64_CONVERT_I64_S));
-		tmp.set(static_cast<int_type>(OpCode::F64_CONVERT_I64_U));
-		tmp.set(static_cast<int_type>(OpCode::F64_REINTERPRET_I64));
-
-		tmp.set(static_cast<int_type>(OpCode::I32_LOAD));
-		tmp.set(static_cast<int_type>(OpCode::I64_LOAD));
-		tmp.set(static_cast<int_type>(OpCode::F32_LOAD));
-		tmp.set(static_cast<int_type>(OpCode::F64_LOAD));
-		tmp.set(static_cast<int_type>(OpCode::I32_LOAD8_S));
-		tmp.set(static_cast<int_type>(OpCode::I32_LOAD8_U));
-		tmp.set(static_cast<int_type>(OpCode::I32_LOAD16_S));
-		tmp.set(static_cast<int_type>(OpCode::I32_LOAD16_U));
-		tmp.set(static_cast<int_type>(OpCode::I64_LOAD8_S));
-		tmp.set(static_cast<int_type>(OpCode::I64_LOAD8_U));
-		tmp.set(static_cast<int_type>(OpCode::I64_LOAD16_S));
-		tmp.set(static_cast<int_type>(OpCode::I64_LOAD16_U));
-		tmp.set(static_cast<int_type>(OpCode::I64_LOAD32_S));
-		tmp.set(static_cast<int_type>(OpCode::I64_LOAD32_U));
-		tmp.set(static_cast<int_type>(OpCode::I32_STORE));
-		tmp.set(static_cast<int_type>(OpCode::I64_STORE));
-		tmp.set(static_cast<int_type>(OpCode::F32_STORE));
-		tmp.set(static_cast<int_type>(OpCode::F64_STORE));
-		tmp.set(static_cast<int_type>(OpCode::I32_STORE8));
-		tmp.set(static_cast<int_type>(OpCode::I32_STORE16));
-		tmp.set(static_cast<int_type>(OpCode::I64_STORE8));
-		tmp.set(static_cast<int_type>(OpCode::I64_STORE16));
-		tmp.set(static_cast<int_type>(OpCode::I64_STORE32));
-
-		tmp.set(static_cast<int_type>(OpCode::GROW_MEMORY));
-		tmp.set(static_cast<int_type>(OpCode::CURRENT_MEMORY));
+		for(OpCode op: all_opcodes)
+			tmp.set(static_cast<std::size_t>(op));
 		return tmp;
 	}()};
 	return bs;
@@ -631,8 +832,8 @@ const std::array<const char*, 256>& opcode_names()
 	}()/* invoke lambda */}; /* names */
 	return names;
 }
-} /* namespace detail */
 
+} /* namespace detail */
 
 std::ostream& operator<<(std::ostream& os, OpCode oc)
 {
@@ -649,15 +850,15 @@ std::ostream& operator<<(std::ostream& os, OpCode oc)
 	return os;
 }
 
-inline bool opcode_exists(std::underlying_type_t<OpCode> oc) [[gnu::pure]]
-{
-	return detail::opcode_mask().test(oc);
-}
+[[gnu::pure]]
+inline bool opcode_exists(std::underlying_type_t<OpCode> oc)
+{ return detail::opcode_mask().test(oc); }
 
 namespace detail {
 
 template <class It>
-std::tuple<wasm_uint32_t, wasm_uint32_t, It> read_memory_immediate(It first, It last) [[gnu::pure]]
+[[gnu::pure]]
+std::tuple<wasm_uint32_t, wasm_uint32_t, It> read_memory_immediate(It first, It last)
 {
 	alignas(wasm_uint32_t) char buff1[sizeof(wasm_uint32_t)];
 	alignas(wasm_uint32_t) char buff2[sizeof(wasm_uint32_t)];
@@ -679,7 +880,8 @@ std::tuple<wasm_uint32_t, wasm_uint32_t, It> read_memory_immediate(It first, It 
 }
 
 template <class T, class It>
-std::pair<T, It> read_serialized_immediate(It first, It last) [[gnu::pure]]
+[[gnu::pure]]
+std::pair<T, It> read_serialized_immediate(It first, It last)
 {
 	static_assert(std::is_trivially_copyable_v<T>);
 	T value;
@@ -737,7 +939,7 @@ decltype(auto) visit_opcode(Visitor visitor, It first, It last)
 				last,
 				pos,
 				op,
-				BadOpcodeError(op, "Given op is not a valid WASM opcode."),
+				BadOpcodeError(op, "Given op is not a valid WASM opcode.")
 			);
 		}
 	}
@@ -768,7 +970,7 @@ decltype(auto) visit_opcode(Visitor visitor, It first, It last)
 	{
 		assert(first != last);
 		LanguageType tp = static_cast<LanguageType>(*first++);
-		was_uint32_t label;
+		wasm_uint32_t label;
 		std::tie(label, pos) = detail::read_serialized_immediate<wasm_uint32_t>(pos, last);
 		return visitor(first, last, pos, op, tp, label);
 	}
@@ -838,7 +1040,11 @@ struct BlockImmediate:
 };
 
 gsl::span<const LanguageType> signature(const BlockImmediate& immed)
-{ return gsl::span<const LanguageType>(&(immed.first), 1u); }
+{
+	if(immed.first == LanguageType::BLOCK)
+		return gsl::span<const LanguageType>();
+	return gsl::span<const LanguageType>(&(immed.first), 1u);
+}
 
 std::size_t arity(const BlockImmediate& immed)
 { return signature(immed).size(); }
@@ -846,7 +1052,29 @@ std::size_t arity(const BlockImmediate& immed)
 wasm_uint32_t offset(const BlockImmediate& immed)
 { return immed.second; }
 
-struct BranchTableImmediate:
+struct IfImmediate:
+	public std::tuple<const LanguageType, const wasm_uint32_t, const wasm_uint32_t>
+{
+	using std::tuple<const LanguageType, const wasm_uint32_t, const wasm_uint32_t>::pair;
+};
+
+wasm_uint32_t else_offset(const IfImmediate& immed)
+{ return std::get<2u>(immed); }
+
+wasm_uint32_t end_offset(const IfImmediate& immed)
+{ return std::get<1u>(immed); }
+
+gsl::span<const LanguageType> signature(const IfImmediate& immed)
+{ 
+	if(std::get<0u>(immed) == LanguageType::BLOCK)
+		return gsl::span<const LanguageType>();
+	return gsl::span<const LanguageType>(&(std::get<0u>(immed)), 1u);
+}
+
+std::size_t arity(const IfImmediate& immed)
+{ return signature(immed).size(); }
+
+struct BranchTableImmediate
 {
 	template <class ... T>
 	BranchTableImmediate(T&& ... args):
@@ -857,7 +1085,7 @@ struct BranchTableImmediate:
 
 	wasm_uint32_t at(wasm_uint32_t idx) const
 	{
-		idx = std::min(table_.size() - 1u, idx);
+		idx = std::min(std::size_t(table_.size() - 1u), std::size_t(idx));
 		wasm_uint32_t depth;
 		std::memcpy(&depth, table_.data() + idx, sizeof(depth));
 		return depth;
@@ -883,7 +1111,7 @@ struct WasmInstruction
 	union immediate_type
 	{
 		// no immediate (most instructions)
-		null_immediate_type         null_immed
+		null_immediate_type         null_immed;
 		// i32.const
 		i32_immediate_type          i32_immed;
 		// i64.const
@@ -1011,7 +1239,7 @@ private:
 	template <class T>
 	void assert_valid(Tag<T>) const
 	{
-		assert(validate(d
+		assert(validate(Tag<T>{}));
 	}
 
 	WasmInstruction(std::string_view src, OpCode op, const char* end_pos, null_immediate_type null_immed):
@@ -1058,6 +1286,8 @@ public:
 
 	const immediate_type& raw_immediate() const
 	{ return raw_immediate_; }
+
+	const offset_immediate_type& offset_immed() 
 
 	tagged_immediate_type tagged_immediate() const
 	{
@@ -1159,8 +1389,19 @@ public:
 	const char* end_pos() const
 	{ return end_; }
 
+	const char* pos() const
+	{ return source().data(); }
+
+	CodeView after() const
+	{
+		assert(pos() < end_pos());
+		assert(static_cast<std::size_t>(end_pos() - pos()) < source().size());
+		auto source_end = source().data() + source().size()
+		return CodeView(source_end, end_pos() - source_end);
+	}
+
 	template <class CallStackType>
-	WasmInstruction execute(WasmModule& module, CallStackType& call_stack) 
+	CodeView execute(WasmModule& module, CallStackType& call_stack) 
 	{
 		switch(opcode)
 		{
@@ -1190,31 +1431,43 @@ public:
 			break;
 		case OpCode::END:
 			assert_valid(Tag<null_immediate_type>{});
-			op_func<OpCode::END>();
+			op_func<OpCode::END>(
+				current_frame(call_stack), raw_immediate().offset_immed, *this
+			);
 			break;
 		case OpCode::BR:
 			assert_valid(Tag<offset_immediate_type>{});
-			op_func<OpCode::BR>();
+			op_func<OpCode::BR>(
+				current_frame(call_stack), raw_immediate().offset_immed, *this
+			);
 			break;
 		case OpCode::BR_IF:
 			assert_valid(Tag<offset_immediate_type>{});
-			op_func<OpCode::BR_IF>();
+			op_func<OpCode::BR_IF>(
+				current_frame(call_stack), raw_immediate().offset_immed, *this
+			);
 			break;
 		case OpCode::BR_TABLE:
 			assert_valid(Tag<branch_table_immediate_type>{});
-			op_func<OpCode::BR_TABLE>();
+			op_func<OpCode::BR_TABLE>(
+				call_stack, raw_immediate().branch_table_immed, *this
+			);
 			break;
 		case OpCode::RETURN:
 			assert_valid(Tag<null_immediate_type>{});
-			op_func<OpCode::RETURN>();
+			op_func<OpCode::RETURN>(call_stack);
 			break;
 		case OpCode::CALL:
 			assert_valid(Tag<offset_immediate_type>{});
-			op_func<OpCode::CALL>();
+			op_func<OpCode::CALL>(
+				call_stack, module, raw_immediate().offset_immed, *this
+			);
 			break;
 		case OpCode::CALL_INDIRECT:
 			assert_valid(Tag<offset_immediate_type>{});
-			op_func<OpCode::CALL_INDIRECT>();
+			op_func<OpCode::CALL_INDIRECT>(
+				call_stack, module, raw_immediate().offset_immed, *this
+			);
 			break;
 		case OpCode::DROP:
 			assert_valid(Tag<null_immediate_type>{});
@@ -1946,8 +2199,6 @@ public:
 		}
 	}
 	
-	
-	
 private:
 	
 	void _assert_invariants() const
@@ -2012,24 +2263,41 @@ private:
 		return CodeView(dest_pos, end_pos());
 	}
 
-	CodeView remaining_code() {
-		assert(source().end() < end_pos());
-		assert(opcode() != OpCode::IF);
-		assert(opcode() != OpCode::ELSE);
-		assert(opcode() != OpCode::BR);
-		assert(opcode() != OpCode::BR_IF);
-		assert(opcode() != OpCode::BR_TABLE);
-		return CodeView(source().end(), end_pos());
+	using null_immediate_type         = std::monostate;
+	using i32_immediate_type          = wasm_sint32_t;
+	using i64_immediate_type          = wasm_sint64_t;
+	using f32_immediate_type          = wasm_float32_t;
+	using f64_immediate_type          = wasm_float64_t;
+	using offset_immediate_type       = wasm_uint32_t;
+	using memory_immediate_type       = MemoryImmediate;
+	using block_immediate_type        = BlockImmediate;
+	using loop_immediate_type         = LanguageType;
+	using branch_table_immediate_type = BranchTableImmediate;
+
+	const i32_immediate_type& i32_immed() const;
+	const i64_immediate_type& i64_immed() const;
+	const f32_immediate_type& f32_immed() const;
+	const f64_immediate_type& f64_immed() const;
+	const offset_immediate_type& offset_immed() const;
+	const memory_immediate_type& memory_immed() const;
+	const memory_immediate_type& memory_immed() const;
+
+	const OpCode& opcode() const
+	{
+		assert(source_.data().size() > 0u);
+		assert(opcode_exists(source_.data().front()));
+		return source_.data().front();
 	}
 
-	/// Byte sequence from which this instruction was decoded.
-	const std::string_view source_;
-	/// Opcode for this instruction.
-	const OpCode opcode_;
-	/// Past-the-end pointer into the code from which this instruction was decoded
-	const char* const end_;
+
+	struct LazyImmediate {
+		std::size_t consumed;
+		immediate_type;
+	};
+	/// Code from which this instruction was decoded.
+	const CodeView source_;
 	/// Raw union of possible immediate operand alternatives, discriminated by 'this->opcode'.
-	const immediate_type raw_immediate_;
+	std::optional<const LazyImmediate> immediate_;
 };
 
 struct CodeView
@@ -2046,6 +2314,12 @@ struct CodeView
 	using const_iterator = iterator;
 
 private:
+
+	template <LanguageType LT, LanguageType ... V>
+	static constexpr const bool match_one_of_v
+		= ((LT == V) or ...);
+
+
 
 	struct InstructionVisitor {
 
@@ -2068,7 +2342,10 @@ private:
 			);
 		}
 
+
 	private:
+		
+		
 		// Overload for instructions with immediate operands
 		WasmInstruction make_instr(std::string_view view, OpCode op, const char* last)
 		{ return WasmInstruction(view, op, last, std::monostate()); }
@@ -2136,45 +2413,223 @@ public:
 		
 		friend bool operator!=(const Iterator& left, const Iterator& right)
 		{ return not (left == right); }
-		
-		
 	private:
 		gsl::not_null<CodeView*> code_;
 	};
 
 	CodeView(const WasmFunction& func):
+		function_(&func),
 		code_(code(func))
 	{
 		
 	}
 
-	
-	
+	const WasmFunction* function() const
+	{ return function_; }
 
 	OpCode current_op() const
 	{
 		assert(ready());
 		return static_cast<WasmInstruction>(code_.front());
 	}
-	
+
 	bool done() const
 	{ return not code_.empty(); }
 
-	WasmInstruction next_instruction() const
+	const char* pos() const
+	{ return code_.data(); }
+
+	void advance(const CodeView& other)
 	{
+		assert(function() == other.function());
 		assert(ready());
-		return visit_opcode(InstructionVisitor{}, code_.data(), code_.data() + code_.size());
+		assert(code_.data() + code_.size() == other.code_.data() + other.code_.size());
+		assert(code_.data() < other.code_.data());
+		code_ = other.code_;
 	}
 
-	void advance(const WasmInstruction& instr)
+	std::optional<WasmInstruction> next_instruction() const
 	{
-		assert(not done());
-		assert(instr.source.data() == code_.data());
-		instr._assert_invariants();
-		assert(instr.source.size() <= code_.size());
-		code.remove_prefix(instr.source.size());
+		if(code_.size() == 0)
+			return std::nullopt;
+		return visit_opcode(
+			opcode(),
+			[&](auto opcode) {
+				return visit_op_impl(
+					[&](auto first, auto pos, auto last, auto op, auto&& immed) {
+						return WasmInstruction(*this, pos, std::forward<decltype(immed)>(immed));
+					},
+					opcode
+				);
+			}
+		);
 	}
 
+	std::optional<CodeView> advance(
+		WasmModule& module,
+		WasmCallStack<T>& call_stack
+	)
+	{
+		if(code_.size() == 0)
+			return std::nullopt;
+		auto vis = [&](auto first, auto pos, auto last, auto op, const auto& immed) {
+			return dispatch(call_stack, module, first, pos, last, op, immed);
+		};
+	}
+
+	CodeView jump(wasm_uint32_t jump_dist) const
+	{
+		using pair_type = std::pair<CodeView, std::optional<CodeView>>;
+		assert(jump_dist > 0u);
+		assert(code_.size() > jump_dist);
+		CodeView dest = *this;
+		dest.code_.remove_prefix(jump_dist);
+		return dest;
+	}
+	
+private:
+	template <class T, OpCode Op, class ImmediateType>
+	CodeView dispatch(
+		WasmCallStack<T>& call_stack,
+		WasmModule& module,
+		const char* first,
+		const char* pos,
+		const char* last,
+		std::integral_constant<OpCode, Op> op,
+		const ImmediateType& immed
+	)
+	{
+		auto after = *this;
+		after.code_.remove_prefix(pos - first);
+		return op_func<Op>(call_stack, module, *this, after, immed);
+	}
+
+	template <class Vis, class T, OpCode Op>
+	decltype(auto) visit_op_impl(Vis&& visitor, std::integral_constant<OpCode, Op> op) {
+		auto first = code_.data();
+		auto last = first + code_.size();
+
+		assert(first < last);
+		assert(*first == Op);
+
+		if constexpr(op >= OpCode::I32_LOAD and op <= OpCode::I64_STORE32)
+		{
+			auto [flags, offset, pos] = detail::read_memory_immediate(first + 1u, last);
+			return std::invoke(
+				std::forward<Vis>(visitor),
+				first, pos, last, op, MemoryImmediateType(flags, offset)
+			);
+		}
+		else if constexpr(
+			(op >= OpCode::GET_LOCAL and op <= OpCode::SET_GLOBAL)
+			or op == OpCode::CALL
+			or op == OpCode::CALL_INDIRECT
+			or op == OpCode::BR
+			or op == OpCode::BR_IF
+			or op == OpCode::ELSE
+		)
+		{
+			auto [value, pos] = detail::read_serialized_immediate<wasm_uint32_t>(first + 1u, last);
+			return std::invoke(
+				std::forward<Vis>(visitor), first, pos, last, op, value
+			);
+		}
+		else if constexpr(op == OpCode::BLOCK)
+		{
+			auto pos = first + 1u;
+			assert(pos < last);
+			LanguageType tp = static_cast<LanguageType>(*pos++);
+			wasm_uint32_t label;
+			std::tie(label, pos) = detail::read_serialized_immediate<wasm_uint32_t>(pos, last);
+			return std::invoke(
+				std::forward<Vis>(visitor),
+				first, pos, last, op, BlockImmediate(tp, label)
+			);
+		}
+		else if constexpr(op == OpCode::IF)
+		{
+			auto pos = first + 1u;
+			assert(pos < last);
+			LanguageType tp = static_cast<LanguageType>(*pos++);
+			wasm_uint32_t end_label;
+			wasm_uint32_t else_label;
+			std::tie(end_label, pos) = detail::read_serialized_immediate<wasm_uint32_t>(pos, last);
+			std::tie(else_label, pos) = detail::read_serialized_immediate<wasm_uint32_t>(pos, last);
+			return std::invoke(
+				std::forward<Vis>(visitor),
+				first, pos, last, op, IfImmediate(tp, end_label, else_label)
+			);
+		}
+		else if constexpr(op == OpCode::LOOP)
+		{
+			auto pos = first + 1u;
+			assert(pos < last);
+			LanguageType tp = static_cast<LanguageType>(*pos++);
+			return std::invoke(
+				std::forward<Vis>(visitor),
+				first, pos, last, op, BlockImmediate(tp, label)
+			);
+		}
+		else if constexpr(op == OpCode::BR_TABLE)
+		{
+			wasm_uint32_t len;
+			std::tie(len, pos) = detail::read_serialized_immediate<wasm_uint32_t>(pos, last);
+			auto table_base = pos;
+			auto table_size = (1u + len);
+			assert(last - pos > table_size);
+			std::advance(pos, table_size * sizeof(wasm_uint32_t));
+			using table_elem_type = const char[sizeof(wasm_uint32_t)];
+			auto table = gsl::span<table_elem_type>(
+				reinterpret_cast<table_elem_type*>(table_base),
+				table_size
+			);
+			return std::invoke(
+				std::forward<Vis>(visitor),
+				first, pos, last, op, table
+			);
+		}
+		else if constexpr(Op == OpCode::I32_CONST)
+		{
+			auto [v, pos] = detail::read_serialized_immediate<wasm_sint32_t>(first + 1u, last);
+			return std::invoke(
+				std::forward<Vis>(visitor),
+				first, pos, last, op, table
+			);
+		}
+		else if constexpr(Op == OpCode::I64_CONST)
+		{
+			auto [v, pos] = detail::read_serialized_immediate<wasm_sint64_t>(first + 1u, last);
+			return std::invoke(
+				std::forward<Vis>(visitor),
+				first, pos, last, op, table
+			);
+		}
+		else if constexpr(Op == OpCode::F32_CONST)
+		{
+			auto [v, pos] = detail::read_serialized_immediate<wasm_float32_t>(first + 1u, last);
+			return std::invoke(
+				std::forward<Vis>(visitor),
+				first, pos, last, op, table
+			);
+		}
+		else if constexpr(Op == OpCode::F64_CONST)
+		{
+			auto [v, pos] = detail::read_serialized_immediate<wasm_float64_t>(first + 1u, last);
+			return std::invoke(
+				std::forward<Vis>(visitor),
+				first, pos, last, op, table
+			);
+		}
+		else
+		{
+			assert(opcode_exists(Op));
+			return std::invoke(
+				std::forward<Vis>(visitor),
+				first, pos, last, op, std::monostate{}
+			);
+		}
+	}
+ 
 	bool ready() const
 	{
 		if(done())
@@ -2182,6 +2637,8 @@ public:
 		assert(opcode_exists(code_.front()));
 		return true;
 	}
+
+	const WasmFunction* function_;
 	std::string_view code_;
 };
 

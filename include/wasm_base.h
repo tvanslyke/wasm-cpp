@@ -75,22 +75,22 @@ struct language_type_value;
 template <>
 struct language_type_value<wasm_sint32_t>: 
 	public std::integral_constant<LanguageType, LanguageType::i32>
-{}
+{};
 
 template <>
 struct language_type_value<wasm_sint64_t>: 
 	public std::integral_constant<LanguageType, LanguageType::i64>
-{}
+{};
 
 template <>
 struct language_type_value<wasm_float32_t>: 
 	public std::integral_constant<LanguageType, LanguageType::f32>
-{}
+{};
 
 template <>
 struct language_type_value<wasm_float64_t>: 
 	public std::integral_constant<LanguageType, LanguageType::f64>
-{}
+{};
 
 template <class T>
 inline constexpr const LanguageType language_type_value_v = language_type_value<T>::value;

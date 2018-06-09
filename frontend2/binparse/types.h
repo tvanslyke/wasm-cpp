@@ -120,6 +120,8 @@ struct wasm::parse::GlobalType:
 	public std::pair<LanguageType, bool>
 {
 	using std::pair<LanguageType, bool>::pair;
+	static constexpr const ExternalKind external_kind_v 
+		= LanguageType::Global;
 
 	const LanguageType& type() const
 	{ return first; }
@@ -161,6 +163,8 @@ std::ostream& wasm::parse::operator<<(std::ostream& os, const GlobalType& glob)
 struct wasm::parse::Table:
 	public ResizableLimits
 {
+	static constexpr const ExternalKind external_kind_v 
+		= LanguageType::Table;
 	using ResizableLimits::ResizableLimits;
 };
 BOOST_FUSION_ADAPT_STRUCT(
@@ -176,6 +180,8 @@ std::ostream& wasm::parse::operator<<(std::ostream& os, const Table& table)
 struct wasm::parse::Memory:
 	public ResizableLimits
 {
+	static constexpr const ExternalKind external_kind_v 
+		= LanguageType::Memory;
 	using ResizableLimits::ResizableLimits;
 };
 BOOST_FUSION_ADAPT_STRUCT(
@@ -218,6 +224,23 @@ struct wasm::parse::ImportEntry {
 	std::string module_name;
 	std::string field_name;
 	variant_t entry_type;
+
+	ExternalKind kind() const
+	{
+		switch(entry_type.index())
+		{	
+		case 0u:
+			return ExternalKind::Function;
+		case 1u:
+			return ExternalKind::Table;
+		case 2u:
+			return ExternalKind::Memory;
+		case 3u:
+			return ExternalKind::Global;
+		default:
+			assert(false);
+		}
+	}
 };
 
 BOOST_FUSION_ADAPT_STRUCT(

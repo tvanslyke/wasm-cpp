@@ -11,6 +11,9 @@ struct WasmFunctionSignature
 	using view_type = std::basic_string_view<LanguageType>;
 	using string_type = std::basic_string<LanguageType>;
 
+	static constexpr const ExternalKind external_kind_v
+		= ExternalKind::Function;
+
 	WasmFunctionSignature(const parse::FunctionSignature& sig)
 		param_count(sig.param_types.size()),
 		return_count(sig.return_type ? 1u : 0u),
@@ -25,6 +28,18 @@ struct WasmFunctionSignature
 		
 	}
 
+	
+	constexpr WasmFunctionSignature(
+		std::initializer_list<LanguageType> result_types,
+		std::initializer_list<LanguageType> argument_types
+	):
+		param_count(arg_count),
+		return_count(r),
+		data(std::move(string_type(result_types).append(argument_types)))
+	{
+		
+	}
+
 	friend auto param_types(const WasmFunctionSignature& sig)
 	{ return view_type(sig.c_str() + sig.return_count, sig.pram_count); }
 
@@ -32,6 +47,14 @@ struct WasmFunctionSignature
 	{ return view_type(sig.c_str(), sig.return_count); }
 
 private:
+	static string_type from_lists(
+		std::initializer_list<LanguageType> result_types,
+		std::initializer_list<LanguageType> argument_types
+	)
+	{
+		return string_type(result_types).append
+	}
+
 	const std::size_t param_count;
 	const std::size_t return_count;
 	const string_type data;

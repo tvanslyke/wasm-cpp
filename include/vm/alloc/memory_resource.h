@@ -1,7 +1,6 @@
 #ifndef VM_OP_ALLOC_MEMORY_RESOURCE_H
 #define VM_OP_ALLOC_MEMORY_RESOURCE_H
 
-#include <allocator>
 #include <ciso646>
 
 #if defined(__has_include)

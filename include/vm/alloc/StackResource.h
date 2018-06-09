@@ -1,9 +1,10 @@
 #ifndef VM_ALLOC_STACK_RESOURCE_H
 #define VM_ALLOC_STACK_RESOURCE_H
 
-#include <memory_resource>
+#include "vm/alloc/memory_resource.h"
 #include <gsl/span>
 #include <cstddef>
+
 namespace wasm {
 
 struct StackOverflowError:
@@ -32,14 +33,20 @@ struct BadAlignmentError:
 };
 
 struct StackResource:
-	public std::pmr::memory_resource
+	public pmr::memory_resource
 {
 
 	static constexpr const std::size_t max_alignment = alignof(std::max_align_t);
 
 	StackResource(char* base, std::size_t count):
-		base_(base),
-		buffer_(base, count)
+		StackResource(gsl::span<char>(base, count))
+	{
+		
+	}
+	
+	StackResource(gsl::span<char> buff):
+		base_(buff.data()),
+		buffer_(buff)
 	{
 		assert(buffer_.data() == base_);
 	}
@@ -94,6 +101,12 @@ struct StackResource:
 		_assert_invariants();
 		return p;
 	}
+
+	std::size_t capacity() const
+	{ return (buffer_.data() + buffer_.size()) - base_; }
+
+	gsl::span<const char> inspect() const
+	{ return gsl::span<const char>(base_, buffer_.data() - base_); }
 
 private:
 	
@@ -166,7 +179,7 @@ private:
 		assert(buffer_.size() == 0u or is_aligned(buff_pos, buffer_.size(), max_alignment));
 	}
 	
-	bool do_is_equal(const std::pmr::memory_resource& other) const override
+	bool do_is_equal(const pmr::memory_resource& other) const override
 	{
 		if(this == &other)
 			return true;
@@ -269,7 +282,7 @@ struct SimpleStack
 	reference emplace(Args&& ... args)
 	{
 		alloc_n(1u);
-		pointer p = new (base_ + (size() - 1)) T(std::forward<Args>(args)...);
+		pointer p = ::new (base_ + (size() - 1)) T(std::forward<Args>(args)...);
 		return *p;
 	}
 
@@ -279,7 +292,7 @@ struct SimpleStack
 		assert(size() > 0u);
 		pointer p = std::addressof(top());
 		destroy_at(p);
-		p = new (p) T(std::forward<Args>(args)...);
+		p = ::new (p) T(std::forward<Args>(args)...);
 		return *std::launder(p);
 	}
 
@@ -291,7 +304,7 @@ struct SimpleStack
 		return v;
 	}
 
-	void pop(std::size_t n)
+	void pop_n(std::size_t n)
 	{
 		assert(n > 0u);
 		assert(size() >= n);
@@ -320,15 +333,21 @@ struct SimpleStack
 	{
 		assert(not empty());
 		assert(i < size());
-		return base_[((size() - 1) - i)];
+		return data()[((size() - 1) - i)];
 	}
 
 	reference operator[](size_type i)
+	{ return const_cast<reference>(std::as_const(*this)[i]); }
+
+	const_reference at(size_type i) const
 	{
-		assert(not empty());
-		assert(i < size());
-		return base_[((size() - 1) - i)];
+		if(i < size())
+			return (*this)[i];
+		throw std::out_of_range("Attempt to access value in stack at an out-of-range depth.");
 	}
+
+	reference at(size_type i)
+	{ return const_cast<reference>(std::as_const(*this).at(i)); }
 
 	const_pointer data() const
 	{ return base_; }

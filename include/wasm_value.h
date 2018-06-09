@@ -44,6 +44,44 @@ struct WasmValue {
 		this->*active_member = 0;
 	}
 
+	explicit WasmValue(LanguageType lt)
+	{
+		switch(lt)
+		{
+		case LanguageType::i32: this->i32 = 0; break;
+		case LanguageType::i64: this->i64 = 0; break;
+		case LanguageType::f32: this->f32 = 0; break;
+		case LanguageType::f64: this->f64 = 0; break;
+		default:
+			assert(false);
+		}
+	}
+
+	template <class T>
+	const T& operator->*(T WasmValue::* p) const
+	{ return this->*p; }
+
+	template <class T>
+	const T& operator->*(const T WasmValue::* p) const
+	{ return this->*p; }
+
+	template <class T>
+	T& operator->*(T WasmValue::* p)
+	{ return this->*p; }
+
+	
+	template <class T>
+	const T& get(T WasmValue::* p) const
+	{ return this->*p; }
+
+	template <class T>
+	const T& get(const T WasmValue::* p) const
+	{ return this->*p; }
+
+	template <class T>
+	T& get(T WasmValue::* p)
+	{ return this->*p; }
+
 	union {
 		wasm_sint32_t  i32;
 		wasm_sint64_t  i64 = 0;
@@ -96,7 +134,10 @@ template <class T>
 inline constexpr const auto member()
 {
 	using type = std::remove_const_t<T>;
-	static_assert(std::is_same_v<type, std::decay_t<type>);
+	static_assert(
+		std::is_same_v<type, std::decay_t<type>
+		"T must be a (possible const) non-reference, non-pointer type in wasm::tp::member<T>()."
+	);
 	static_assert(
 		std::disjunction_v<
 			std::is_same<type, wasm_sint32_t>,
@@ -118,7 +159,7 @@ inline constexpr const auto member()
 		else if constexpr(std::is_same_v<type, wasm_float64_t>)
 			return f64_c;
 		else
-			assert(false);
+			assert(false and "Unreachable.");
 	}
 	else
 	{
@@ -131,7 +172,25 @@ inline constexpr const auto member()
 		else if constexpr(std::is_same_v<type, wasm_float64_t>)
 			return f64;
 		else
-			assert(false);
+			assert(false and "Unreachable.");
+	}
+}
+
+template <class Visitor>
+decltype(auto) visit_value_type(Visitor&& vis, LanguageType value_type_v)
+{
+	switch(value_type_v)
+	{
+	case LanguageType::i32:
+		return std::forward<Visitor>(tp::i32);
+	case LanguageType::i64:
+		return std::forward<Visitor>(tp::i64);
+	case LanguageType::f32:
+		return std::forward<Visitor>(tp::f32);
+	case LanguageType::f64:
+		return std::forward<Visitor>(tp::f64);
+	default:
+		assert(false);
 	}
 }
 
@@ -161,27 +220,19 @@ struct TaggedWasmValue {
 
 	explicit TaggedWasmValue(wasm_sint32_t i32_init):
 		tag_(LanguageType::i32), value_()
-	{
-		value_.i32 = i32_init;
-	}
+	{ value_.i32 = i32_init; }
 
 	explicit TaggedWasmValue(wasm_sint64_t i64_init):
 		tag_(LanguageType::i64), value_()
-	{
-		value_.i64 = i64_init;
-	}
+	{ value_.i64 = i64_init; }
 	
 	explicit TaggedWasmValue(wasm_float32_t f32_init):
 		tag_(LanguageType::f32), value_()
-	{
-		value_.f32 = f32_init;
-	}
+	{ value_.f32 = f32_init; }
 
 	explicit TaggedWasmValue(wasm_float64_t f64_init):
 		tag_(LanguageType::f64), value_()
-	{
-		value_.f64 = f64_init;
-	}
+	{ value_.f64 = f64_init; }
 
 	template <class T, class Initializer>
 	TaggedWasmValue(T WasmValue::* active_member, Initializer&& init):
@@ -194,9 +245,44 @@ struct TaggedWasmValue {
 	template <class T>
 	explicit TaggedWasmValue(T WasmValue::* active_member):
 		TaggedWasmValue(active_member, T(0))
+	{ set_zero(); }
+
+	explicit TaggedWasmValue(LanguageType lt):
+		TaggedWasmValue(tp::i64, 0)
 	{
-		set_zero();
+		auto visitor = [&](const auto& self, auto p){
+			self.value_.*p = 0;
+		};
+		tp::visit_value_type(visitor, lt);
+		tag_ = lt;
 	}
+
+	template <class T>
+	const T& operator->*(T WasmValue::* p) const
+	{ return this->value_.*p; }
+
+	template <class T>
+	const T& operator->*(const T WasmValue::* p) const
+	{ return this->value_.*p; }
+
+	template <class T>
+	T& operator->*(T WasmValue::* p)
+	{ return this->value_.*p; }
+
+	template <class T>
+	const T& operator->*(T WasmValue::* p) const
+	{
+		return this->value_.*p;
+	}
+
+	template <class T>
+	const T& operator->*(const T WasmValue::* p) const
+	{ return this->value_.*p; }
+
+	template <class T>
+	T& operator->*(T WasmValue::* p)
+	{ return this->value_.*p; }
+
 	
 	explicit operator WasmValue() const
 	{
@@ -204,7 +290,7 @@ struct TaggedWasmValue {
 		auto visitor = [&](const auto& self, auto p){
 			v.*p = self.value_.*p;
 		};
-		visit_tag(visitor, *this);
+		tp::visit_value_type(visitor, tag());
 		return v;
 	}
 
@@ -224,152 +310,74 @@ struct TaggedWasmValue {
 	constexpr bool holds(LanguageType tp) const
 	{ return tag() == tp; }
 
-	template <LanguageType Tp
+	template <LanguageType Tp>
 	constexpr bool holds() const
 	{ return holds(Tp); }
+
+	template <class T>
+	void ensure_holds() const
+	{ 
+		if(not holds<T>())
+			throw BadWasmValueAccess();
+	}
+
+	template <class T>
+	void ensure_holds(T WasmValue::* active_member) const
+	{
+		if(not holds(active_member))
+			throw BadWasmValueAccess();
+	}
+
+	void ensure_holds(LanguageType tp) const
+	{
+		if(not holds(tp))
+			throw BadWasmValueAccess();
+	}
+
+	template <LanguageType Tp>
+	void ensure_holds() const
+	{
+		if(not holds<Tp>())
+			throw BadWasmValueAccess();
+	}
 
 	constexpr LanguageType tag() const
 	{ return tag_; }
 
 	template <class T>
-	const T& unsafe_read(const T WasmValue::* mem) const
-	{ return value_.*mem; }
-	
-	template <class T>
-	const T& unsafe_read(T WasmValue::* mem) const
-	{ return unsafe_read(static_cast<const T WasmValue::*>(mem)); }
-	
-	template <class T>
-	const T& read(const T WasmValue::* mem) const
-	{ return value_.*mem; }
-	
-	template <class T>
-	const T& read(T WasmValue::* mem) const
-	{
-		if(not holds(mem))
-			throw BadWasmValueAccess();
-		return unsafe_read(mem);
-	}
-	
-	template <class T>
-	T& write(T WasmValue::* mem, T value)
-	{
-		return value_.*mem = value;
-	}
-
-	template <class T>
 	friend const T& get(const TaggedWasmValue& self)
 	{
-		if constexpr(std::is_const<T>)
-			return read(tp::member<T>());
-		else
-			return read(tp::member<std::add_const_t<T>>());
+		self.ensure_holds<std::decay_t<T>>();
+		return self->*tp::member<type>();
 	}
 
 	template <class T>
 	friend decltype(auto) get(TaggedWasmValue& self)
 	{
-		if constexpr(std::is_const_v<T>)
-		{
-			return get<T>(std::as_const(self));
-		}
-		else
-		{
-			if(not self.holds<T>())
-				throw BadWasmValueAccess();
-			return self.value_.*member<T>();
-		}
+		self.ensure_holds<std::decay_t<T>>();
+		return self->*tp::member<type>();
 	}
 
 	template <class Vis>
-	friend decltype(auto) visit(Vis vis, const TaggedWasmValue& self)
+	friend decltype(auto) visit(Vis&& vis, const TaggedWasmValue& self)
 	{
-		switch(self.tag())
-		{
-		default:
-			assert(false);
-		case LanguageType::i32:
-			return vis(self.value_.i32);
-		case LanguageType::i64:
-			return vis(self.value_.i64);
-		case LanguageType::f32:
-			return vis(self.value_.f32);
-		case LanguageType::f64:
-			return vis(self.value_.f64);
-		}
+		return tp::visit_value_type(
+			[&](auto WasmValue::* p) -> decltype(auto) {
+				return std::invoke(std::forward<Vis>(vis), self->*p)
+			},
+			self.tag()
+		);
 	}
 
 	template <class Vis>
 	friend decltype(auto) visit(Vis vis, TaggedWasmValue& self)
 	{
-		switch(self.tag())
-		{
-		default:
-			assert(false);
-		case LanguageType::i32:
-			return vis(self.value_.i32);
-		case LanguageType::i64:
-			return vis(self.value_.i64);
-		case LanguageType::f32:
-			return vis(self.value_.f32);
-		case LanguageType::f64:
-			return vis(self.value_.f64);
-		}
-	}
-
-	template <class Vis>
-	friend decltype(auto) visit_tag(Vis vis, const TaggedWasmValue& self)
-	{
-		switch(self.tag())
-		{
-		default:
-			assert(false);
-		case LanguageType::i32:
-			return vis(self, tp::i32_c);
-		case LanguageType::i64:
-			return vis(self, tp::i64_c);
-		case LanguageType::f32:
-			return vis(self, tp::f32_c);
-		case LanguageType::f64:
-			return vis(self, tp::f64_c);
-		}
-	}
-
-	template <class Vis>
-	friend decltype(auto) visit_tag(Vis vis, TaggedWasmValue& self)
-	{
-		switch(self.tag())
-		{
-		default:
-			assert(false);
-		case LanguageType::i32:
-			return vis(self, tp::i32);
-		case LanguageType::i64:
-			return vis(self, tp::i64);
-		case LanguageType::f32:
-			return vis(self, tp::f32);
-		case LanguageType::f64:
-			return vis(self, tp::f64);
-		}
-	}
-
-	friend TaggedWasmValue& set(TaggedWasmValue& self, const TaggedWasmValue& src)
-	{
-		if(self.tag() != src.tag())
-			throw BadWasmValueAccess();
-		self = src;
-		return *this;
-	}
-
-	friend TaggedWasmValue& set(TaggedWasmValue& self, const WasmValue& src)
-	{
-		if(self.tag() != src.tag())
-			throw BadWasmValueAccess();
-		auto vis = [&](auto& s, auto p) {
-			s.value_.*p = src.*p;
-		};
-		visit_tag(vis, self);
-		return *this;
+		return tp::visit_value_type(
+			[&](auto WasmValue::* p) -> decltype(auto) {
+				return std::invoke(std::forward<Vis>(vis), self->*p)
+			},
+			self.tag()
+		);
 	}
 
 private:
@@ -377,91 +385,9 @@ private:
 	WasmValue value_;
 };
 
-template <class T>
-const std::decay_t<T>& get(const TaggedWasmValue& self, T WasmValue::* mem)
-{ return self.read(mem); }
-
-template <class T>
-T& get(const TaggedWasmValue& self, T WasmValue::* mem)
-{ return self.read(mem); }
-
-template <class T>
-std::decay_t<T>& set(TaggedWasmValue& self, T WasmValue::* mem, std::decay_t<T> value)
-{ return self.write(mem, mem); }
-
-template <class T>
-const std::decay_t<T>& get(const WasmValue& self, T WasmValue::* mem)
-{ return self.*mem; }
-
-void set(WasmValue& self, const TaggedWasmValue& src)
-{
-	auto vis = [&](auto& src, auto p){
-		return self.p = src.unsafe_read(p);
-	};
-	return visit_tag(vis, src);
-}
-
-void set(WasmValue& self, const WasmValue& src)
-{ return self = src; }
-
-template <class T>
-std::decay_t<T>& set(WasmValue& self, T WasmValue::* mem, std::decay_t<T> value)
-{ return self.*mem = value; }
-
 std::ostream& operator<<(std::ostream& os, const TaggedWasmValue& val)
 { return visit([](auto v) { return os << v; }, val); }
 
-
-template <class T>
-const std::decay_t<T>& operator->*(const WasmValue& self, T WasmValue::* mem)
-{ return self.*mem; }
-
-template <class T>
-const std::decay_t<T>& operator->*(WasmValue& self, const T WasmValue::* mem)
-{ return self.*mem; }
-
-template <class T>
-const std::decay_t<T>& operator->*(WasmValue& self, const T WasmValue::* mem)
-{ return self.*mem; }
-
-template <class T>
-std::decay_t<T>& operator->*(WasmValue& self, T WasmValue::* mem)
-{ return self.*mem; }
-
-
-template <class T>
-const std::decay_t<T>& operator->*(const TaggedWasmValue& self, T WasmValue::* mem)
-{ return get(self, mem); }
-
-template <class T>
-const std::decay_t<T>& operator->*(TaggedWasmValue& self, const T WasmValue::* mem)
-{ return get(self, mem); }
-
-template <class T>
-const std::decay_t<T>& operator->*(TaggedWasmValue& self, const T WasmValue::* mem)
-{ return get(self, mem); }
-
-template <class T>
-std::decay_t<T>& operator->*(TaggedWasmValue& self, T WasmValue::* mem)
-{ return get(self, mem); }
-
-template <class Visitor>
-decltype(auto) visit_value_type(Visitor&& vis, LanguageType value_type_v)
-{
-	switch(value_type_v)
-	{
-	case LanguageType::i32:
-		return std::forward<Visitor>(tp::i32);
-	case LanguageType::i64:
-		return std::forward<Visitor>(tp::i64);
-	case LanguageType::f32:
-		return std::forward<Visitor>(tp::f32);
-	case LanguageType::f64:
-		return std::forward<Visitor>(tp::f64);
-	default:
-		assert(false);
-	}
-}
 
 
 } /* namespace wasm */

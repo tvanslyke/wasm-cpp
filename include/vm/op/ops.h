@@ -65,17 +65,18 @@ inline const auto make_binary_op(
 			std::decay_t<std::invoke_result_t<Binop, Left, Right>>
 		>
 	);
-	return [=](auto& frame) {
-		frame.stack_pop_2_push_1(
+	return [=](auto& call_stack, WasmModule&, auto&, const CodeView& after, auto&) {
+		call_stack.top_frame().stack_pop_2_push_1(
 			result_p,
 			std::apply(binop, frame.stack_top_2(left_p, right_p))
 		);
+		return after;
 	};
 };
 
 
 template <class Unop, class Result, class Input>
-inline const auto make_unary_op(
+auto make_unary_op(
 	Unop unop,
 	Result WasmValue::* result_p,
 	Input WasmValue::* input_p,
@@ -88,10 +89,11 @@ inline const auto make_unary_op(
 			std::decay_t<std::invoke_result_t<Binop, Input>>
 		>
 	);
-	return [=](auto& frame) {
-		frame.stack_pop_1_push_1(
+	return [=](auto& call_stack, WasmModule&, auto&, const CodeView& after, auto&) {
+		call_stack.top_frame().stack_pop_1_push_1(
 			result_p, std::invoke(unop, frame.stack_top(input_p))
 		);
+		return after;
 	};
 };
 
@@ -137,8 +139,11 @@ NoDiscard<std::decay_t<Func>> make_nodiscard(Func&& func) {
 
 } /* namespace detail */
 
+
 template <OpCode Op>
-inline const auto op_func = [](){ throw BadOpcodeError(); };
+inline const auto op_func
+	= [](auto& stack, auto& module, auto& )
+	{ throw BadOpcodeError(); };
 
 /// Control Flow Operations
 template <>
@@ -150,181 +155,196 @@ inline const auto op_func<OpCode::UNREACHABLE>
 
 template <>
 inline const auto op_func<OpCode::BLOCK>
-	= [](auto& frame, gsl::span<LanguageType> sig, wasm_uint32_t jump_offset, gsl::span<const char> code)
-	{
-		assert(not code.empty());
-		assert(code.front() == static_cast<char>(OpCode::BLOCK));
-		assert(jump_offset > 0u);
-		assert(jump_offset < code.size());
-		assert(code[jump_offset - 1u] == static_cast<char>(OpCode::END));
-		const char* jump_pos = code.data() + jump_offset;
-		frame.push_block(jump_pos, sig);
-	};
+	= [](auto& call_stack, WasmModule&, const CodeView& pos, const CodeView& after, const BlockImmediate& immed) -> CodeView
+{
+	auto sig = signature(immed);
+	auto offset = offset(immed);
+	assert(offset > 0u);
+	call_stack.top_frame().push_block(pos.jump(offset), sig);
+	return after;
+};
 
 template <>
 inline const auto op_func<OpCode::LOOP>
-	= [](auto& frame, gsl::span<LanguageType> sig, gsl::span<const char> code)
+	= [](auto& call_stack, WasmModule&, const CodeView& pos, const CodeView& after, LanguageType immed) -> CodeView
+{
+	call_stack.top_frame().push_block(after, sig);
+	return after;
+};
+
+template <>
+inline const auto op_func<OpCode::IF>
+	= [](auto& call_stack, WasmModule&, const CodeView& pos, const CodeView& after, const IfImmediate& immed) -> CodeView
+		-> CodeView
+{
+	auto& frame = call_stack.top_frame();
+	auto condition = reinterpret_cast<const wasm_uint32_t&>(frame.stack_top(tp::i32_c));
+	assert(instr.opcode() == static_cast<char>(OpCode::IF));
+	// CodeView starting at the END opcode for this if block
+	auto end_pos = pos.jump(end_offset(immed));
+	auto sig = signature(immed);
+	if(static_cast<bool>(condition))
 	{
-		assert(not code.empty());
-		assert(code.front() == static_cast<char>(OpCode::LOOP));
-		const char* jump_pos = code.data();
-		frame.push_block(jump_pos, sig);
-	};
-
-template <>
-inline const auto op_func<OpCode::IF> = detail::make_nodiscard(
-	[](auto& frame, gsl::span<LanguageType> sig, wasm_uint32_t jump_offset, const WasmInstruction& instr)
-		-> std::optional<WasmInstruction>
+		// push the IF block
+		frame.push_block(end_pos, sig);
+		return after;
+	}
+	else
 	{
-		auto condition = reinterpret_cast<const wasm_uint32_t&>(frame.stack_top(tp::i32_c));
-		assert(instr.opcode() == static_cast<char>(OpCode::IF));
-		assert(jump_offset > 0u);
-		assert(jump_offset < code.size());
-		const char* jump_pos = code.data() + jump_offset;
-		assert(
-			(jump_pos[-1] == static_cast<char>(OpCode::END))
-			or (jump_pos[-(sizeof(jump_offset) + 1u)] == static_cast<char>(OpCode::ELSE))
-		);
-		if(static_cast<bool>(condition))
-		{
-			// push the IF block
-			frame.push_block(jump_pos, sig);
-			return std::nullopt;
-		}
-		else
-		{
-			// either push the corresponding ELSE block or jump to the END if there is no ELSE
-			auto [next_instr, label] = instr.branch_if();
-			if(label)
-			{
-				// IF has an ELSE block.  Push it.
-				frame.push_block(jump_pos, sig);
-			}
-			else
-			{
-				// IF does not have an ELSE block.
-				// 'next_instr' is the instruction after the END instruction terminating the IF block.
-				(void)0;
-			}
-			return next_instr;
-		}
+		assert(else_offset(immed) != 0u);
+		frame.push_block(end_pos, sig);
+		// CodeView starting just after the ELSE opcode for this if block
+		return pos.jump(else_offset(immed));
 	}
-);
+};
 
 template <>
-inline const auto op_func<OpCode::ELSE> = detail::make_nodiscard(
-	[](auto& frame, const WasmInstruction& instr) { return instr.jump_over_else(); }
-);
+inline const auto op_func<OpCode::ELSE>
+	= [](auto& call_stack, WasmModule&, const auto&, const CodeView&, std::monostate) -> CodeView
+{
+	return call_stack.top_frame().branch_top();
+};
 
 template <>
-inline const auto op_func<OpCode::END> = detail::make_nodiscard(
-	[](auto& frame) { frame.branch_top(); }
-);
+inline const auto op_func<OpCode::END>
+	= [](auto& call_stack, WasmModule&, const auto&, const CodeView& after, std::monostate) -> CodeView
+{
+	if(after.size() == 0u)
+		return call_stack.return_from_frame();
+	else
+		return call_stack.top_frame().branch_top();
+};
 
 template <>
-inline const auto op_func<OpCode::BR> = detail::make_nodiscard(
-	[](auto& frame, wasm_uint32_t depth, const WasmInstruction& instr) {
-		return instr.branch_to(frame.branch_depth(depth));
-	}
-);
+inline const auto op_func<OpCode::BR>
+	= [](auto& call_stack, WasmModule&, const auto&, const CodeView&, wasm_uint32_t depth) -> CodeView
+{
+	return call_stack.top_frame().branch_depth(depth);
+};
 
 template <>
-inline const auto op_func<OpCode::BR_IF> = detail::make_nodiscard(
-	[](auto& frame, wasm_uint32_t depth, const WasmInstruction& instr)
-		-> std::optional<CodeView>
+inline const auto op_func<OpCode::BR_IF>
+	= [](auto& call_stack, WasmModule&, const auto&, const CodeView& after, wasm_uint32_t depth) -> CodeView
+{
+	auto& frame = call_stack.top_frame();
+	wasm_uint32_t cond = reinterpret_cast<const wasm_uint32_t&>(frame_stack_top(tp::i32));
+	auto tmp = frame.stack_pop();
+	if(static_cast<bool>(cond))
 	{
-		auto& stack = current_stack(frame);
-		wasm_uint32_t cond = reinterpret_cast<const wasm_uint32_t&>(get(stack.top(), tp::i32));
-		stack.pop();
-		if(static_cast<bool>(cond))
-			return instr.branch_to(frame.branch_depth(depth));
-		return std::nullopt;
+		auto guard_ = make_scope_guard([&](){ frame.stack_emplace_top(tmp); });
+		return frame.branch_depth(depth);
 	}
-);
+	return after;
+};
 
 template <>
-inline const auto op_func<OpCode::BR_TABLE> = detail::make_nodiscard(
-	[](auto& frame, const auto& table, const WasmInstruction& instr) -> CodeView
-	{
-		auto& stack = current_stack(frame);
-		wasm_uint32_t index = reinterpret_cast<const wasm_uint32_t&>(get(stack.top(), tp::i32));
-		wasm_uint32_t depth = table.at(index);
-		return instr.branch_to(frame.branch_depth(depth));
-	}
-);
+inline const auto op_func<OpCode::BR_TABLE>
+	= [](auto& call_stack, WasmModule&, const auto&, const CodeView&, auto table) -> CodeView
+{
+	auto& frame = call_stack.top_frame();
+	wasm_uint32_t index = reinterpret_cast<const wasm_uint32_t&>(frame.stack_top(tp::i32));
+	wasm_uint32_t depth = table.at(index);
+	auto tmp = frame.stack_pop();
+	auto guard_ = make_scope_guard([&](){ frame.stack_emplace_top(tmp); });
+	return frame.branch_depth(depth);
+};
 
 template <>
-inline const auto op_func<OpCode::RETURN> = detail::make_nodiscard(
-	[](auto& call_stack) -> CodeView { return call_stack.return_from_frame(); }
-);
+inline const auto op_func<OpCode::RETURN>
+	= [](auto& call_stack, WasmModule&, const auto&, const CodeView&, std::monostate) -> CodeView
+{
+	return call_stack.return_from_frame();
+}
 
 /// Function Calls
 template <>
-inline const auto op_func<OpCode::CALL> = detail::make_nodiscard(
-	[](auto& call_stack, const WasmModule& module, wasm_uint32_t index) -> CodeView
-	{ return call_stack.push_frame(module.function_at(index)); }
-);
+inline const auto op_func<OpCode::CALL>
+	= [](auto& call_stack, WasmModule&, const auto&, const CodeView& after, wasm_uint32_t index) -> CodeView
+{
+	return call_stack.call_function(module.function_at(index), after);
+};
+
+template <>
+inline const auto op_func<OpCode::CALL_INDIRECT>
+	= [](auto& call_stack, WasmModule&, const auto&, const CodeView& after, wasm_uint32_t type_index) -> CodeView
+{
+	call_stack.call_table_function(module.table_at(0), module.type_at(type_index));
+	return after;
+};
 
 /// Variable Access
 template <>
 inline const auto op_func<OpCode::GET_LOCAL>
-	= [](auto& frame, wasm_uint32_t local_index) -> void
+	= [](auto& call_stack, WasmModule&, const auto&, const CodeView& after, wasm_uint32_t local_index) -> CodeView
 {
+	auto& frame = call_stack.top_frame();
 	frame.stack_emplace_top(frame.local_at(local_index));
+	return after;
 };
 
 template <>
 inline const auto op_func<OpCode::TEE_LOCAL>
-	= [](auto& frame, wasm_uint32_t local_index) -> void
+	= [](auto& call_stack, WasmModule&, const auto&, const CodeView& after, wasm_uint32_t local_index) -> CodeView
 {
+	auto& frame = call_stack.top_frame();
 	set(frame.local_at(local_index), frame.stack_top());
+	return after;
 };
 
 template <>
 inline const auto op_func<OpCode::SET_LOCAL>
-	= [](auto& frame, wasm_uint32_t local_index) -> void
+	= [](auto& call_stack, WasmModule&, const auto&, const CodeView& after, wasm_uint32_t local_index) -> CodeView
 {
+	auto& frame = call_stack.top_frame();
 	op_func<OpCode::TEE_LOCAL>(frame, local_index);
 	frame.stack_pop();
+	return after;
 };
 
 template <>
 inline const auto op_func<OpCode::GET_GLOBAL>
-	= [](auto& frame, const WasmModule& module, wasm_uint32_t global_index) -> void
+	= [](auto& call_stack, WasmModule& module, const auto&, const CodeView& after, wasm_uint32_t global_index) -> CodeView
 {
+	auto& frame = call_stack.top_frame();
 	const auto& g = module.global_at(global_index);
 	frame.stack_emplace_top(static_cast<TaggedWasmValue>(g));
+	return after;
 };
 
 template <>
 inline const auto op_func<OpCode::SET_GLOBAL>
-	= [](auto& frame, WasmModule& module, wasm_uint32_t global_index) -> void
+	= [](auto& call_stack, WasmModule& module, const auto&, const CodeView& after, wasm_uint32_t global_index) -> CodeView
 {
+	auto& frame = call_stack.top_frame();
 	auto& g = module.global_at(global_index);
 	set(g, frame.stack_top());
 	frame.stack_pop();
+	return after;
 };
 
 /// Parametric Operations
 template <>
 inline const auto op_func<OpCode::SELECT>
-	= [](auto& frame) -> void
+	= [](auto& call_stack, WasmModule&, const auto&, const CodeView& after, std::monostate) -> CodeView 
 {
+	auto& frame = call_stack.top_frame();
 	// throw early so that the erroneous state of the stack can be inspected
 	// for debugging purposes.
 	if(frame.stack_size() < 3u)
 		BadStackAccess();
-	auto cond = get(frame.stack_pop(), tp::i32);
+	auto cond = frame.stack_pop(tp::i32);
 	auto alt = frame.stack_pop();
 	if(not cond)
 		frame.stack_pop_1_push_1(alt);
+	return after;
 };
 
 template <>
 inline const auto op_func<OpCode::DROP>
-	= [](auto& frame) -> void
+	= [](auto& call_stack, WasmModule&, const auto&, const CodeView& after, std::monostate) -> CodeView
 {
-	frame.stack_pop();
+	call_stack.top_frame().stack_pop();
+	return after;
 };
 
 
@@ -377,12 +397,15 @@ inline const auto wrap_value = [](auto src) -> Dest {
 template <LoadStoreOp LoadStore, class StoredType, class Member, class Convert>
 auto memory_op(Member member, Convert convert = idendity) {
 	return [=](
-		auto& frame,
+		auto& call_stack,
 		WasmModule& module,
-		[[maybe_unused]] wasm_uint32_t flags,
-		wasm_uint32_t offset
+		[[maybe_unused]] auto pos,
+		const CodeView& after,
+		const MemoryImmediate& immed
 	)
 	{
+		auto& frame = call_stack.top_frame();
+		wasm_uint32_t offset = offset(immed);
 		static_assert(std::is_trivially_copyable_v<StoredType>);
 		auto& mem = module.memory_at(0);
 		if constexpr(LoadStore == LoadStoreOp::LOAD)
@@ -535,25 +558,26 @@ inline const auto op_func<detail::LoadStoreOp::LOAD, OpCode::I64_LOAD32_S>
 // misc memory ops
 template <>
 inline const auto op_func<OpCode::GROW_MEMORY> 
-	= [](auto& frame, WasmModule& module) {
-		auto& stack = current_stack(frame);
+	= [](auto& call_stack, WasmModule& module, [[maybe_unused]] auto pos, CodeView next, const std::monostate&) {
 		auto& mem = module.memory_at(0);
-		auto top_v = frame.stack_top(tp::i32_c);
+		auto top_v = call_stack.top_frame().stack_top(tp::i32_c);
 		wasm_uint32_t delta = reinterpret_cast<const wasm_uint32_t&>(top_v);
 		auto result = grow_memory(mem, delta);
 		static_assert(std::is_same_v<decltype(result), wasm_sint32_t>);
-		frame.stack_top(tp::i32) = result;
+		call_stack.top_frame().stack_pop_1_push_1(tp::i32, result);
+		return next;
 	};
 
 template <>
 inline const auto op_func<OpCode::CURRENT_MEMORY> 
-	= [](auto& frame, WasmModule& module) {
+	= [](auto& call_stack, WasmModule& module, [[maybe_unused]] auto pos, CodeView next, const std::monostate&) {
 		auto& mem = module.memory_at(0);
 		auto sz = current_memory(mem);
 		wasm_uint32_t u32_sz = sz;
 		assert(sz == u32_sz);
 		wasm_sint32_t i32_sz = reinterpret_cast<const wasm_sint32_t&>(u32_sz);
-		frame.stack_emplace_top(tp::i32, i32_sz);
+		call_stack.top_frame().stack_emplace_top(tp::i32, i32_sz);
+		return next;
 	};
 
 /// i32 ops

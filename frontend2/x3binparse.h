@@ -266,30 +266,34 @@ inline const auto loop_opcode
 inline const auto code
 	= x3::rule<struct code_tag, std::string>("code");
 
+inline constexpr const std::size_t label_size = sizeof(wasm_uint32_t);
+
 // an unbound label has the value zero.  This is always invalid since the label must at least
-// be '7' to jump over the 'IF', itself, and the 'END' (>7 if there's an 'ELSE')
+// be '6' to jump over the 'IF' and itself (>6 if there's an 'ELSE')
 inline const auto unbound_label
-	= x3::attr(std::string(sizeof(std::uint32_t), 0));
+	= x3::attr(std::string(label_size, 0));
 
 inline const auto bind_block_label = [](auto& ctx) {
 	auto& str = x3::_val(ctx);
 	assert(str.front() == static_cast<char>(OpCode::BLOCK));
-	assert(str.size() >= 2u + sizeof(std::uint32_t));
+	assert(str.back() == static_cast<char>(OpCode::END));
+	assert(str.size() >= 2u + label_size);
 	auto label_pos = str.data() + 2;
-	assert(std::all_of(label_pos, label_pos + sizeof(std::uint32_t), [](char c){ return c == 0; }));
-	std::uint32_t jumpdist = str.size();
-	assert(jumpdist == str.size()); // no truncation
+	assert(std::all_of(label_pos, label_pos + label_size, [](char c){ return c == 0; }));
+	std::uint32_t jumpdist = str.size() - 1u;
+	assert(jumpdist == (str.size() - 1u)); // no truncation
 	std::memcpy(label_pos, &jumpdist, sizeof(jumpdist));
 };
 
 inline const auto bind_if_else_label = [](auto& ctx) {
 	auto& str = x3::_val(ctx);
 	assert(str.front() == static_cast<char>(OpCode::IF));
-	assert(str.size() >= 3u + 2u * sizeof(std::uint32_t));
+	assert(str.size() >= 3u + 2u * label_size);
 	auto label_pos = str.data() + 2;
-	assert(std::all_of(label_pos, label_pos + sizeof(std::uint32_t), [](char c){ return c == 0; }));
-	assert(std::all_of(str.end() - sizeof(std::uint32_t), str.end(), [](char c){ return c == 0; }));
-	assert(str[str.size() - (1u + sizeof(std::uint32_t))] == static_cast<char>(OpCode::ELSE));
+	assert(std::all_of(label_pos, label_pos + 2u * label_size, [](char c){ return c == 0; }));
+	assert(str.back() == static_cast<char>(OpCode::ELSE));
+	// bind the second label to the opcode after the ELSE
+	label_pos += label_size;
 	std::uint32_t jumpdist = str.size();
 	assert(jumpdist == str.size()); // no truncation
 	std::memcpy(label_pos, &jumpdist, sizeof(jumpdist));
@@ -298,27 +302,14 @@ inline const auto bind_if_else_label = [](auto& ctx) {
 inline const auto bind_if_end_label = [](auto& ctx) {
 	auto& str = x3::_val(ctx);
 	assert(str.front() == static_cast<char>(OpCode::IF));
-	assert(str.size() >= 3u + sizeof(std::uint32_t));
+	assert(str.size() >= 3u + 2u * label_size);
 	auto label_pos = str.data() + 2;
-	std::uint32_t jumpdist;
-	std::memcpy(&jumpdist, label_pos, sizeof(jumpdist));
-	if(jumpdist == 0u)
-	{
-		jumpdist = str.size();
-		std::memcpy(label_pos, &jumpdist, sizeof(jumpdist));
-	}
-	else
-	{
-		assert(jumpdist < str.size());
-		assert(jumpdist >= 3u + sizeof(std::uint32_t));
-		label_pos = str.data() + jumpdist;
-		label_pos -= sizeof(std::uint32_t);
-		assert(std::all_of(label_pos, label_pos + sizeof(std::uint32_t), [](char c){ return c == 0; }));
-		auto else_pos = label_pos - 1;
-		assert(*else_pos == static_cast<char>(OpCode::ELSE));
-		jumpdist = std::distance(else_pos, std::addressof(*str.end()));
-		std::memcpy(label_pos, &jumpdist, sizeof(jumpdist));
-	}
+	assert(std::all_of(label_pos, label_pos + label_size, [](char c){ return c == 0; }));
+	assert(str.back() == static_cast<char>(OpCode::END));
+	// bind the first label to the END opcode
+	std::uint32_t jumpdist = str.size() - 1u;
+	assert(jumpdist == str.size() - 1u); // no truncation
+	std::memcpy(label_pos, &jumpdist, sizeof(jumpdist));
 };
 
 inline const auto block_opcode
@@ -332,12 +323,9 @@ inline const auto if_opcode
 	= x3::rule<struct if_opcode_tag, std::string>{"if_opcode"}
 	= (parse_opcode<OpCode::IF>[append_opcode] > block_immed[append_code])
 	>> unbound_label[append_code]
+	>> unbound_label[append_code]
 	>> code[append_code]
-	>> (-(
-		parse_opcode<OpCode::ELSE>[append_opcode] 
-		>> unbound_label[append_code][bind_if_else_label]
-		>> code[append_code]
-	))
+	>> (-(parse_opcode<OpCode::ELSE>[append_opcode][bind_if_else_label] >> code[append_code]))
 	>> parse_opcode<OpCode::END>[append_opcode][bind_if_end_label];
 
 inline const auto code_def =

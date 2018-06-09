@@ -28,6 +28,9 @@ struct WasmFunction
 	{ return f.code_; }
 
 	friend const WasmFunctionSignature& signature(const WasmFunction& f) 
+	{ return f.signature(); }
+
+	const WasmFunctionSignature& signature(f) 
 	{ return f.signature_; }
 
 	friend gsl::span<const LanguageType> locals(const WasmFunction& f)

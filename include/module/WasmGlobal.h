@@ -63,7 +63,6 @@ struct WasmGlobal
 	using base_type::base_type;
 
 	WasmGlobal() = delete;
-	
 	WasmGlobal(const parse::GlobalEntry& ent):
 		value_(std::in_place_type<wasm_sint32_t>(-1)) // temporary - fix in body
 	{
@@ -257,29 +256,22 @@ void set(WasmGlobal& self, WasmValue v)
 		throw BadGlobalAccess("Attempt to write global before it has been initialized.");
 	if(self.is_const())
 		throw ConstGlobalWriteError();
-	switch(self.get_language_type())
-	{
-	case LanguageType::i32:
-		get<wasm_sint32_t>(self) = v.i32;
-		break;
-	case LanguageType::i64:
-		get<wasm_sint64_t>(self) = v.i64;
-		break;
-	case LanguageType::f32:
-		get<wasm_float32_t>(self) = v.f32;
-		break;
-	case LanguageType::f64:
-		get<wasm_float64_t>(self) = v.f64;
-		break;
-	default:
-		assert(false);
-	}
+	tp::visit_value_type(
+		[&](auto WasmValue::* p) {
+			auto value = v.*p;
+			using type = decltype(value);
+			get<type>(self) = value;
+		},
+		self.get_language_type()
+	);
 }
 
+template <class U>
+void set(WasmGlobal& self, U WasmValue::* p, U value)
+{ set(self, TaggedWasmValue(p, value)); }
+
 void set(WasmValue& self, const WasmGlobal& g)
-{
-	self = static_cast<WasmValue>(g);
-}
+{ self = static_cast<WasmValue>(g); }
 
 void set(TaggedWasmValue& self, const WasmGlobal& g)
 {
@@ -287,6 +279,23 @@ void set(TaggedWasmValue& self, const WasmGlobal& g)
 		throw GlobalTypeMismatch(self.get_language_type(), v.tag());
 	set(self, static_cast<TaggedWasmValue>(self));
 }
+
+
+
+template <class T>
+const std::decay_t<T>& operator->*(const WasmGlobal& self, T WasmValue::* p) {
+	return read<std::decay_t<T>>(self);
+};
+
+template <class T>
+const std::decay_t<T>& operator->*(WasmGlobal& self, const T WasmValue::* p) {
+	return std::as_const(self)->*p;
+};
+
+template <class T>
+T& operator->*(WasmGlobal& self, T WasmValue::* p) {
+	return get<T>(self);
+};
 
 } /* namespace wasm */
 #endif /* MODULE_WASM_GLOBAL_H */
