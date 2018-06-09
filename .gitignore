@@ -2,3 +2,5 @@ CMakeCache.txt
 CMakeFiles
 cmake_install.cmake
 Makefile
+test/
+frontend2/a.out
